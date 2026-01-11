@@ -15,6 +15,15 @@ st.set_page_config(
     page_title="Tableau de bord Paris NBA",
     layout="wide"
 )
+games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
+
+agg = games.groupby("PLAYER_NAME").agg(
+    PTS_AVG=("PTS", "mean"),
+    REB_AVG=("REB", "mean"),
+    AST_AVG=("AST", "mean"),
+    PRA_AVG=("PRA", "mean"),
+    MIN_AVG=("MIN", "mean")
+).reset_index()
 
 # Load data
 players = pd.read_csv("data/players_aggregated.csv")
@@ -152,4 +161,5 @@ elif prob_over < 0.4:
     st.error("PARI RECOMMANDE : UNDER")
 else:
     st.warning("PAS DE VALUE CLAIRE")
+
 
