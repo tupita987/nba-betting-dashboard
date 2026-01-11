@@ -1,34 +1,14 @@
 from nba_api.stats.endpoints import scoreboardv2
-import pandas as pd
+from datetime import datetime
 
-print("loading scoreboard")
+def get_today_games():
+    today = datetime.today().strftime("%Y-%m-%d")
+    board = scoreboardv2.ScoreboardV2(game_date=today)
+    df = board.get_data_frames()[0]
 
-board = scoreboardv2.ScoreboardV2()
-dfs = board.get_data_frames()
-
-print("number of tables:", len(dfs))
-
-games = dfs[0]
-
-print("columns found:")
-print(list(games.columns))
-
-# Keep only columns that exist
-cols = []
-for c in [
-    "GAME_ID",
-    "GAME_DATE_EST",
-    "HOME_TEAM_NAME",
-    "VISITOR_TEAM_NAME"
-]:
-    if c in games.columns:
-        cols.append(c)
-
-games = games[cols]
-
-print("final columns:", list(games.columns))
-print("number of games:", len(games))
-
-games.to_csv("data\\today_games.csv", index=False)
-
-print("today_games.csv created")
+    return df[[
+        "HOME_TEAM_ID",
+        "HOME_TEAM_NAME",
+        "VISITOR_TEAM_ID",
+        "VISITOR_TEAM_NAME"
+    ]]
