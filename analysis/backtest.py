@@ -1,7 +1,7 @@
 import pandas as pd
+import numpy as np
 from scipy.stats import norm
 
-# PARAMETRES
 THRESHOLD = 0.60
 STAKE = 10
 
@@ -19,11 +19,14 @@ for _, row in props.iterrows():
     std = row["STD"] if row["STD"] > 0 else 1
 
     p_games = games[games["PLAYER_NAME"] == player]
-    if stat not in p_games.columns:
+    if stat not in p_games.columns or p_games.empty:
         continue
 
     for _, g in p_games.iterrows():
-        line = mean
+
+        # Simulated bookmaker line (mean +- noise)
+        line = mean + np.random.normal(0, std * 0.5)
+
         prob = 1 - norm.cdf(line, mean, std)
 
         if prob < THRESHOLD:
@@ -37,12 +40,19 @@ for _, row in props.iterrows():
         results.append({
             "PLAYER": player,
             "STAT": stat,
+            "LINE": round(line, 2),
+            "REAL": real,
             "WIN": win,
             "PROFIT": profit
         })
 
+# ===== RESULTATS =====
 df = pd.DataFrame(results)
 
-print("Paris:", len(df))
-print("Winrate:", round(df["WIN"].mean() * 100, 2), "%")
-print("Profit total:", round(df["PROFIT"].sum(), 2))
+if df.empty:
+    print("Aucun pari genere avec ce seuil.")
+    print("Essaye de baisser THRESHOLD (ex: 0.55).")
+else:
+    print("Nombre de paris:", len(df))
+    print("Winrate:", round(df["WIN"].mean() * 100, 2), "%")
+    print("Profit total:", round(df["PROFIT"].sum(), 2))
