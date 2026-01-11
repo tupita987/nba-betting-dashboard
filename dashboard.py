@@ -48,7 +48,7 @@ team_name = p_row["TEAM_NAME"]
 # ======================================================
 # CONTEXTE AUTOMATIQUE VIA today_games
 # ======================================================
-home = team_name in today_games.get("HOME_TEAM_NAME", []).values
+home = team_name in list(today_games.get("HOME_TEAM_NAME", []))
 coef_home = 1.05 if home else 0.97
 
 try:
