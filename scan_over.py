@@ -42,7 +42,14 @@ for _, row in props[props["STAT"] == "PRA"].iterrows():
     prob_over = 1 - norm.cdf(line, mean, std)
     value = abs(prob_over - 0.5)
 
-    if prob_over >= 0.57 and value >= 0.12 and p90 <= line + 8:
-        send_alert(
-            f"OVER PRA AUTO\n{player}\nLigne: {line}\nProba: {round(prob_over*100,1)}%"
-        )
+   # if prob_over >= 0.57 and value >= 0.12 and p90 <= line + 8:
+    #    send_alert(
+    #        f"OVER PRA AUTO\n{player}\nLigne: {line}\nProba: {round(prob_over*100,1)}%"
+    #    )
+
+# TEST FORCE (à enlever après)
+send_alert(
+    f"🧪 TEST AUTO OK\n{player}\nProba: {round(prob_over*100,1)}%"
+)
+break
+
