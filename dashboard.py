@@ -1,9 +1,15 @@
 import streamlit as st
 import pandas as pd
 import requests
+from scipy.stats import norm
 
-BOT_TOKEN = "8414100374:AAGV1DBabq1w8JYzYEltG-vuG2PlOK4mNcc"
-CHAT_ID = "6139600150"
+from analysis.b2b import is_back_to_back
+
+# ======================================================
+# TELEGRAM (SECURISE VIA SECRETS)
+# ======================================================
+BOT_TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
+CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
 
 def send_alert(message: str):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -14,11 +20,8 @@ def send_alert(message: str):
     }
     try:
         requests.post(url, data=payload, timeout=5)
-    except:
-        pass
-from scipy.stats import norm
-
-from analysis.b2b import is_back_to_back
+    except Exception as e:
+        st.error(f"Erreur Telegram : {e}")
 
 # ======================================================
 # MAPPING OFFICIEL NBA
@@ -39,7 +42,7 @@ TEAM_MAP = {
 }
 
 # ======================================================
-# CONFIG
+# CONFIG STREAMLIT
 # ======================================================
 st.set_page_config(page_title="Dashboard Paris NBA", layout="wide")
 
@@ -56,6 +59,9 @@ def load_all():
 
 games, agg, defense, props = load_all()
 
+# ======================================================
+# PREPARATION
+# ======================================================
 games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
 defense["COEF_DEF"] = defense["DEF_RATING"] / defense["DEF_RATING"].mean()
 
@@ -63,10 +69,13 @@ defense["COEF_DEF"] = defense["DEF_RATING"] / defense["DEF_RATING"].mean()
 # UI
 # ======================================================
 st.title("Tableau de bord Paris NBA")
-st.write("PRA • OVER uniquement • alertes automatiques")
+st.write("PRA • OVER uniquement • alertes Telegram automatiques")
 
 st.divider()
 
+# ======================================================
+# SELECTION JOUEUR
+# ======================================================
 player = st.selectbox("Choisir un joueur", sorted(agg["PLAYER_NAME"].unique()))
 p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
@@ -134,7 +143,6 @@ st.write("P90 PRA :", round(p90, 1))
 # DECISION
 # ======================================================
 decision = "NO BET"
-
 if prob_over >= 0.57 and value >= 0.12 and p90 <= line + 8:
     decision = "OVER"
 
@@ -145,10 +153,9 @@ bankroll = st.number_input("Bankroll", value=500.0)
 stake = bankroll * (0.03 if prob_over >= 0.62 else 0.015) if decision == "OVER" else 0
 
 # ======================================================
-# ALERTES TELEGRAM (ANTI-SPAM)
+# ALERTES TELEGRAM + ANTI-SPAM
 # ======================================================
 alert_key = f"{player}_{line}_{round(prob_over,2)}"
-
 if "sent_alerts" not in st.session_state:
     st.session_state["sent_alerts"] = set()
 
@@ -174,12 +181,10 @@ if decision == "OVER":
 else:
     st.warning("NO BET")
 
+# ======================================================
+# TEST MANUEL
+# ======================================================
 st.divider()
-st.write("Outil d’aide à la décision — discipline obligatoire.")
-
-st.divider()
-st.subheader("Test alerte Telegram")
-
 if st.button("Envoyer une alerte test"):
-    send_alert("✅ Test alerte Telegram OK")
+    send_alert("✅ Test Telegram OK")
     st.success("Alerte de test envoyée")
