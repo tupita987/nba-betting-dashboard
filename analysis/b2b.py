@@ -1,11 +1,11 @@
 from nba_api.stats.endpoints import leaguegamefinder
 from datetime import datetime, timedelta
 
-def is_back_to_back(team_id):
+def is_back_to_back(team_name):
     yesterday = (datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     finder = leaguegamefinder.LeagueGameFinder(
-        team_id_nullable=team_id,
+        team_name_nullable=team_name,
         date_from_nullable=yesterday,
         date_to_nullable=yesterday
     )
