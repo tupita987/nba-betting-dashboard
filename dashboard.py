@@ -2,135 +2,137 @@ import streamlit as st
 import pandas as pd
 from scipy.stats import norm
 
+from analysis.today_games import get_today_games
+from analysis.b2b import is_back_to_back
+
 # ======================================================
-# CONFIG STREAMLIT
+# CONFIG
 # ======================================================
-st.set_page_config(page_title="Tableau de bord Paris NBA - V2", layout="wide")
+st.set_page_config(page_title="Dashboard Paris NBA - AUTO", layout="wide")
 
 # ======================================================
 # LOAD DATA
 # ======================================================
-@st.cache_data
-def charger_donnees():
-    matchs = pd.read_parquet("data_export/games.parquet")
-    moyennes = pd.read_parquet("data_export/agg.parquet")
-    defenses = pd.read_parquet("data_export/defense.parquet")
+@st.cache_data(ttl=3600)
+def load_all():
+    games = pd.read_parquet("data_export/games.parquet")
+    agg = pd.read_parquet("data_export/agg.parquet")
+    defense = pd.read_parquet("data_export/defense.parquet")
     props = pd.read_parquet("data_export/props.parquet")
-    return matchs, moyennes, defenses, props
+    today_games = get_today_games()
+    return games, agg, defense, props, today_games
 
-matchs, moyennes, defenses, props = charger_donnees()
+games, agg, defense, props, today_games = load_all()
 
-# ======================================================
-# PREPARATION
-# ======================================================
-matchs["PRA"] = matchs["PTS"] + matchs["REB"] + matchs["AST"]
-defenses["COEF_DEF"] = defenses["DEF_RATING"] / defenses["DEF_RATING"].mean()
+games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
+defense["COEF_DEF"] = defense["DEF_RATING"] / defense["DEF_RATING"].mean()
 
 # ======================================================
 # TITRE
 # ======================================================
-st.title("Tableau de bord Paris NBA — V2")
-st.write("Modele OVER-only PRA avec gestion du risque")
+st.title("Tableau de bord Paris NBA — Automatique")
+st.write("PRA • OVER uniquement • domicile & B2B auto")
 
 st.divider()
 
 # ======================================================
 # SELECTION JOUEUR
 # ======================================================
-joueur = st.selectbox("Choisir un joueur", sorted(moyennes["PLAYER_NAME"].unique()))
+player = st.selectbox("Choisir un joueur", sorted(agg["PLAYER_NAME"].unique()))
+p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
+p_games = games[games["PLAYER_NAME"] == player]
 
-j_matchs = matchs[matchs["PLAYER_NAME"] == joueur]
-j_moy = moyennes[moyennes["PLAYER_NAME"] == joueur].iloc[0]
+team_id = p_row["TEAM_ID"]
+team_name = p_row["TEAM_NAME"]
 
 # ======================================================
-# CONTEXTE AUTOMATISE
+# CONTEXTE AUTOMATIQUE VIA today_games
 # ======================================================
-st.subheader("Contexte du match")
-
-adversaire = st.selectbox("Equipe adverse", sorted(defenses["TEAM"].unique()))
-coef_def = defenses[defenses["TEAM"] == adversaire]["COEF_DEF"].values[0]
-coef_def = min(max(coef_def, 0.92), 1.08)
-
-home = st.checkbox("Match a domicile", value=True)
+home = team_name in today_games["HOME_TEAM_NAME"].values
 coef_home = 1.05 if home else 0.97
 
-fatigue = st.checkbox("Back-to-back (fatigue)", value=False)
-coef_fatigue = 0.96 if fatigue else 1.0
+try:
+    b2b = is_back_to_back(team_id)
+except:
+    b2b = False
+
+coef_fatigue = 0.96 if b2b else 1.0
+
+opponent = st.selectbox("Equipe adverse", sorted(defense["TEAM"].unique()))
+coef_def = defense[defense["TEAM"] == opponent]["COEF_DEF"].values[0]
+coef_def = min(max(coef_def, 0.92), 1.08)
+
+# ======================================================
+# AFFICHAGE CONTEXTE
+# ======================================================
+st.subheader("Contexte détecté automatiquement")
+
+c1, c2, c3 = st.columns(3)
+c1.metric("Domicile", "Oui" if home else "Non")
+c2.metric("Back-to-back", "Oui" if b2b else "Non")
+c3.metric("Adversaire", opponent)
+
+st.divider()
 
 # ======================================================
 # STATS
 # ======================================================
-st.subheader("Statistiques recentes (7 matchs)")
+st.subheader("Statistiques (7 derniers matchs)")
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Points", round(j_moy["PTS_AVG"], 1))
-c2.metric("Rebonds", round(j_moy["REB_AVG"], 1))
-c3.metric("Passes", round(j_moy["AST_AVG"], 1))
-c4.metric("PRA", round(j_moy["PRA_AVG"], 1))
-
-st.divider()
+c1.metric("PTS", round(p_row["PTS_AVG"], 1))
+c2.metric("REB", round(p_row["REB_AVG"], 1))
+c3.metric("AST", round(p_row["AST_AVG"], 1))
+c4.metric("PRA", round(p_row["PRA_AVG"], 1))
 
 # ======================================================
 # ANALYSE PRA
 # ======================================================
-st.subheader("Analyse du pari PRA (OVER uniquement)")
+st.subheader("Analyse PRA (OVER uniquement)")
 
-row = props[(props["PLAYER_NAME"] == joueur) & (props["STAT"] == "PRA")].iloc[0]
+row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] == "PRA")].iloc[0]
+line = st.number_input("Ligne bookmaker PRA", value=float(round(row["MEAN"], 1)))
 
-ligne_book = st.number_input("Ligne bookmaker PRA", value=float(round(row["MEAN"], 1)))
-
-# Moyenne ajustee (contexte capé)
 mean_adj = row["MEAN"] * coef_def * coef_home * coef_fatigue
 std = row["STD"] if row["STD"] > 0 else 1
 
-prob_over = 1 - norm.cdf(ligne_book, mean_adj, std)
+prob_over = 1 - norm.cdf(line, mean_adj, std)
 value = abs(prob_over - 0.5)
+p90 = p_games["PRA"].quantile(0.9)
 
-# Filtre de risque P90
-p90 = j_matchs["PRA"].quantile(0.9)
-
-st.write("Moyenne ajustee :", round(mean_adj, 2))
-st.write("Probabilite Over :", round(prob_over * 100, 1), "%")
-st.write("Value estimee :", round(value * 100, 1), "%")
+st.write("Moyenne ajustée :", round(mean_adj, 2))
+st.write("Probabilité Over :", round(prob_over * 100, 1), "%")
+st.write("Value estimée :", round(value * 100, 1), "%")
 st.write("P90 PRA :", round(p90, 1))
 
-st.divider()
-
 # ======================================================
-# DECISION (POINT 1 + 2)
+# DECISION FINALE
 # ======================================================
 decision = "NO BET"
 
 if prob_over >= 0.57 and value >= 0.12:
-    if p90 <= ligne_book + 8:
+    if p90 <= line + 8:
         decision = "OVER"
 
 # ======================================================
-# MISE DYNAMIQUE (POINT 4)
+# MISE
 # ======================================================
 bankroll = st.number_input("Bankroll totale", value=500.0)
 
 stake = 0
 if decision == "OVER":
-    if prob_over >= 0.62:
-        stake = bankroll * 0.03
-    else:
-        stake = bankroll * 0.015
+    stake = bankroll * (0.03 if prob_over >= 0.62 else 0.015)
 
 # ======================================================
-# AFFICHAGE FINAL
+# RESULTAT
 # ======================================================
-st.subheader("Decision finale du modele")
+st.subheader("Décision du modèle")
 
 if decision == "OVER":
-    st.success("PARI AUTORISE : OVER PRA")
-    st.write("Mise recommandee :", round(stake, 2))
+    st.success("PARI AUTORISÉ : OVER PRA")
+    st.write("Mise recommandée :", round(stake, 2))
 else:
-    st.warning("NO BET — Pari refuse par le modele")
+    st.warning("NO BET — aucun avantage détecté")
 
 st.divider()
-
-st.write(
-    "Avertissement : ce tableau de bord est un outil d'aide a la decision. "
-    "Il n'existe aucune garantie de gain. Discipline obligatoire."
-)
+st.write("Outil d'aide à la décision — discipline obligatoire.")
