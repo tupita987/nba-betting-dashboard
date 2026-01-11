@@ -1,0 +1,27 @@
+name: NBA Backtests
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  run-backtests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy scipy pyarrow
+
+      - name: Run backtests
+        run: |
+          python analysis/backtest.py
+          python analysis/backtest_optimize.py
+          python analysis/backtest_defense.py
