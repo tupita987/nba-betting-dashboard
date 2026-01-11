@@ -3,7 +3,7 @@ name: NBA PRA Auto Scanner
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 14 * * *"   # Tous les jours à 14h UTC
+    - cron: "0 * * * *"   # Toutes les heures
 
 jobs:
   scan:
