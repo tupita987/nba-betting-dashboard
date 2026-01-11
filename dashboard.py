@@ -176,3 +176,10 @@ else:
 
 st.divider()
 st.write("Outil d’aide à la décision — discipline obligatoire.")
+
+st.divider()
+st.subheader("Test alerte Telegram")
+
+if st.button("Envoyer une alerte test"):
+    send_alert("✅ Test alerte Telegram OK")
+    st.success("Alerte de test envoyée")
