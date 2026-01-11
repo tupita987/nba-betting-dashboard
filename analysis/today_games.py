@@ -6,20 +6,18 @@ def get_today_games():
     board = scoreboardv2.ScoreboardV2(game_date=today)
     df = board.get_data_frames()[0]
 
-    # Colonnes possibles selon l'API
-    possible_cols = {
-        "HOME_TEAM_NAME": ["HOME_TEAM_NAME", "HOME_TEAM_ABBREVIATION"],
-        "VISITOR_TEAM_NAME": ["VISITOR_TEAM_NAME", "VISITOR_TEAM_ABBREVIATION"],
-        "HOME_TEAM_ID": ["HOME_TEAM_ID"],
-        "VISITOR_TEAM_ID": ["VISITOR_TEAM_ID"],
-    }
-
     data = {}
 
-    for key, variants in possible_cols.items():
-        for col in variants:
-            if col in df.columns:
-                data[key] = df[col]
-                break
+    # HOME TEAM
+    if "HOME_TEAM_NAME" in df.columns:
+        data["HOME_TEAM_NAME"] = df["HOME_TEAM_NAME"]
+    elif "HOME_TEAM_ABBREVIATION" in df.columns:
+        data["HOME_TEAM_NAME"] = df["HOME_TEAM_ABBREVIATION"]
+
+    # VISITOR TEAM
+    if "VISITOR_TEAM_NAME" in df.columns:
+        data["VISITOR_TEAM_NAME"] = df["VISITOR_TEAM_NAME"]
+    elif "VISITOR_TEAM_ABBREVIATION" in df.columns:
+        data["VISITOR_TEAM_NAME"] = df["VISITOR_TEAM_ABBREVIATION"]
 
     return data
