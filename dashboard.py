@@ -5,6 +5,42 @@ from scipy.stats import norm
 from analysis.b2b import is_back_to_back
 
 # ======================================================
+# MAPPING OFFICIEL NBA (ABR -> NOM COMPLET)
+# ======================================================
+TEAM_MAP = {
+    "ATL": "Atlanta Hawks",
+    "BOS": "Boston Celtics",
+    "BKN": "Brooklyn Nets",
+    "CHA": "Charlotte Hornets",
+    "CHI": "Chicago Bulls",
+    "CLE": "Cleveland Cavaliers",
+    "DAL": "Dallas Mavericks",
+    "DEN": "Denver Nuggets",
+    "DET": "Detroit Pistons",
+    "GSW": "Golden State Warriors",
+    "HOU": "Houston Rockets",
+    "IND": "Indiana Pacers",
+    "LAC": "Los Angeles Clippers",
+    "LAL": "Los Angeles Lakers",
+    "MEM": "Memphis Grizzlies",
+    "MIA": "Miami Heat",
+    "MIL": "Milwaukee Bucks",
+    "MIN": "Minnesota Timberwolves",
+    "NOP": "New Orleans Pelicans",
+    "NYK": "New York Knicks",
+    "OKC": "Oklahoma City Thunder",
+    "ORL": "Orlando Magic",
+    "PHI": "Philadelphia 76ers",
+    "PHX": "Phoenix Suns",
+    "POR": "Portland Trail Blazers",
+    "SAC": "Sacramento Kings",
+    "SAS": "San Antonio Spurs",
+    "TOR": "Toronto Raptors",
+    "UTA": "Utah Jazz",
+    "WAS": "Washington Wizards"
+}
+
+# ======================================================
 # CONFIG
 # ======================================================
 st.set_page_config(page_title="Dashboard Paris NBA", layout="wide")
@@ -55,6 +91,11 @@ home = "vs" in matchup
 coef_home = 1.05 if home else 0.97
 
 # ======================================================
+# NOM COMPLET DE L’EQUIPE (GARANTI)
+# ======================================================
+team_full_name = TEAM_MAP.get(player_team_abbr, player_team_abbr)
+
+# ======================================================
 # BACK TO BACK
 # ======================================================
 try:
@@ -63,16 +104,6 @@ except:
     b2b = False
 
 coef_fatigue = 0.96 if b2b else 1.0
-
-# ======================================================
-# NOM COMPLET DE L’EQUIPE
-# ======================================================
-team_full_name = player_team_abbr  # fallback
-
-if "TEAM_ABBREVIATION" in defense.columns:
-    match = defense[defense["TEAM_ABBREVIATION"] == player_team_abbr]
-    if not match.empty:
-        team_full_name = match.iloc[0]["TEAM"]
 
 # ======================================================
 # ADVERSAIRE
