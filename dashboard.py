@@ -15,15 +15,36 @@ st.set_page_config(
     page_title="Tableau de bord Paris NBA",
     layout="wide"
 )
+# --- SAFE DATA CHECK ---
+required_cols = ["PLAYER_NAME", "PTS", "REB", "AST", "MIN"]
+
+missing = [c for c in required_cols if c not in games.columns]
+if missing:
+    st.error(f"Colonnes manquantes dans games: {missing}")
+    st.stop()
+
+if games.empty:
+    st.error("Aucune donnee joueur chargee depuis l'API NBA")
+    st.stop()
+
+# --- PRA ---
 games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
 
-agg = games.groupby("PLAYER_NAME").agg(
-    PTS_AVG=("PTS", "mean"),
-    REB_AVG=("REB", "mean"),
-    AST_AVG=("AST", "mean"),
-    PRA_AVG=("PRA", "mean"),
-    MIN_AVG=("MIN", "mean")
-).reset_index()
+# --- AGGREGATION ---
+agg = (
+    games
+    .groupby("PLAYER_NAME")
+    .agg(
+        PTS_AVG=("PTS", "mean"),
+        REB_AVG=("REB", "mean"),
+        AST_AVG=("AST", "mean"),
+        PRA_AVG=("PRA", "mean"),
+        MIN_AVG=("MIN", "mean"),
+        GAMES_PLAYED=("PTS", "count")
+    )
+    .reset_index()
+)
+
 
 # Load data
 players = pd.read_csv("data/players_aggregated.csv")
@@ -161,5 +182,6 @@ elif prob_over < 0.4:
     st.error("PARI RECOMMANDE : UNDER")
 else:
     st.warning("PAS DE VALUE CLAIRE")
+
 
 
