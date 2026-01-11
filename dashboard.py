@@ -5,9 +5,9 @@ from scipy.stats import norm
 from analysis.b2b import is_back_to_back
 
 # ======================================================
-# CONFIG STREAMLIT
+# CONFIG
 # ======================================================
-st.set_page_config(page_title="Dashboard Paris NBA - AUTO", layout="wide")
+st.set_page_config(page_title="Dashboard Paris NBA", layout="wide")
 
 # ======================================================
 # LOAD DATA
@@ -31,8 +31,8 @@ defense["COEF_DEF"] = defense["DEF_RATING"] / defense["DEF_RATING"].mean()
 # ======================================================
 # TITRE
 # ======================================================
-st.title("Tableau de bord Paris NBA — Automatique")
-st.write("PRA • OVER uniquement • domicile & B2B automatiques")
+st.title("Tableau de bord Paris NBA")
+st.write("PRA • OVER uniquement • contexte automatique")
 
 st.divider()
 
@@ -44,26 +44,35 @@ p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
 # ======================================================
-# DETECTION EQUIPE & DOMICILE VIA MATCHUP
+# CONTEXTE VIA MATCHUP
 # ======================================================
 latest_game = p_games.sort_values("GAME_DATE").iloc[-1]
 matchup = latest_game["MATCHUP"]
 
 # Ex: "ATL vs BOS" ou "ATL @ BOS"
-player_team = matchup.split(" ")[0]
-
+player_team_abbr = matchup.split(" ")[0]
 home = "vs" in matchup
 coef_home = 1.05 if home else 0.97
 
 # ======================================================
-# BACK TO BACK (via equipe)
+# BACK TO BACK
 # ======================================================
 try:
-    b2b = is_back_to_back(player_team)
+    b2b = is_back_to_back(player_team_abbr)
 except:
     b2b = False
 
 coef_fatigue = 0.96 if b2b else 1.0
+
+# ======================================================
+# NOM COMPLET DE L’EQUIPE
+# ======================================================
+team_full_name = player_team_abbr  # fallback
+
+if "TEAM_ABBREVIATION" in defense.columns:
+    match = defense[defense["TEAM_ABBREVIATION"] == player_team_abbr]
+    if not match.empty:
+        team_full_name = match.iloc[0]["TEAM"]
 
 # ======================================================
 # ADVERSAIRE
@@ -75,12 +84,12 @@ coef_def = min(max(coef_def, 0.92), 1.08)
 # ======================================================
 # AFFICHAGE CONTEXTE
 # ======================================================
-st.subheader("Contexte détecté automatiquement")
+st.subheader("Contexte du match")
 
 c1, c2, c3 = st.columns(3)
-c1.metric("Domicile", "Oui" if home else "Non")
-c2.metric("Back-to-back", "Oui" if b2b else "Non")
-c3.metric("Equipe", player_team)
+c1.metric("Equipe", team_full_name)
+c2.metric("Domicile", "Oui" if home else "Non")
+c3.metric("Back-to-back", "Oui" if b2b else "Non")
 
 st.divider()
 
@@ -141,7 +150,7 @@ if decision == "OVER":
     stake = bankroll * (0.03 if prob_over >= 0.62 else 0.015)
 
 # ======================================================
-# RESULTAT FINAL
+# RESULTAT
 # ======================================================
 st.subheader("Décision du modèle")
 
