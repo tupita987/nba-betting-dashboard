@@ -1,7 +1,16 @@
 import streamlit as st
 import pandas as pd
 from scipy.stats import norm
+from analysis.fetch_data_cloud import load_players_games
+from analysis.defense_cloud import load_team_defense
 
+@st.cache_data(ttl=3600)
+def load_all_data():
+    games = load_players_games()
+    defense = load_team_defense()
+    return games, defense
+
+games, defense = load_all_data()
 st.set_page_config(
     page_title="Tableau de bord Paris NBA",
     layout="wide"
@@ -143,3 +152,4 @@ elif prob_over < 0.4:
     st.error("PARI RECOMMANDE : UNDER")
 else:
     st.warning("PAS DE VALUE CLAIRE")
+
