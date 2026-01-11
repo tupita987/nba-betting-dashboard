@@ -46,23 +46,17 @@ p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
 # ======================================================
-# DETECTION ROBUSTE DU NOM D’EQUIPE
+# DETECTION EQUIPE (SOURCE BRUTE : games.parquet)
 # ======================================================
-possible_team_cols = [
-    "TEAM_NAME",
-    "TEAM",
-    "TEAM_ABBREVIATION",
-    "TEAM_SHORT_NAME"
-]
-
-team_name = None
-for col in possible_team_cols:
-    if col in p_row.index:
-        team_name = p_row[col]
-        break
-
-if team_name is None:
-    st.error("Impossible de détecter l’équipe du joueur dans agg.parquet")
+# On prend l'équipe du dernier match joué
+if "TEAM_NAME" in p_games.columns:
+    team_name = (
+        p_games
+        .sort_values("GAME_DATE")
+        .iloc[-1]["TEAM_NAME"]
+    )
+else:
+    st.error("La colonne TEAM_NAME est absente de games.parquet")
     st.stop()
 
 # ======================================================
@@ -80,7 +74,7 @@ except:
 coef_fatigue = 0.96 if b2b else 1.0
 
 opponent = st.selectbox("Equipe adverse", sorted(defense["TEAM"].unique()))
-coef_def = defense[defense["TEAM"] == opponent]["COEF_DEF"].values[0]
+coef_def = defense.loc[defense["TEAM"] == opponent, "COEF_DEF"].values[0]
 coef_def = min(max(coef_def, 0.92), 1.08)
 
 # ======================================================
