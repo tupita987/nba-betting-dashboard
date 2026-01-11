@@ -45,6 +45,10 @@ agg = (
     .reset_index()
 )
 
+# --- DEBUG VISUEL ---
+st.write("Apercu donnees joueurs (debug)")
+st.write(agg.head())
+
 
 # Load data
 players = pd.read_csv("data/players_aggregated.csv")
@@ -182,6 +186,7 @@ elif prob_over < 0.4:
     st.error("PARI RECOMMANDE : UNDER")
 else:
     st.warning("PAS DE VALUE CLAIRE")
+
 
 
 
