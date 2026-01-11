@@ -46,18 +46,34 @@ p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
 # ======================================================
-# DETECTION EQUIPE (SOURCE BRUTE : games.parquet)
+# DETECTION DYNAMIQUE DE L’EQUIPE (SOURCE BRUTE)
 # ======================================================
-# On prend l'équipe du dernier match joué
-if "TEAM_NAME" in p_games.columns:
-    team_name = (
-        p_games
-        .sort_values("GAME_DATE")
-        .iloc[-1]["TEAM_NAME"]
+possible_team_cols = [
+    "TEAM_NAME",
+    "TEAM",
+    "TEAM_ABBREVIATION",
+    "TEAM_SHORT_NAME",
+    "TEAM_CITY"
+]
+
+team_col = None
+for col in possible_team_cols:
+    if col in p_games.columns:
+        team_col = col
+        break
+
+if team_col is None:
+    st.error(
+        "Impossible de détecter la colonne équipe dans games.parquet.\n"
+        f"Colonnes disponibles : {list(p_games.columns)}"
     )
-else:
-    st.error("La colonne TEAM_NAME est absente de games.parquet")
     st.stop()
+
+team_name = (
+    p_games
+    .sort_values("GAME_DATE")
+    .iloc[-1][team_col]
+)
 
 # ======================================================
 # CONTEXTE AUTOMATIQUE
