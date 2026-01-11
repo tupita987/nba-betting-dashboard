@@ -1,16 +1,23 @@
+import os
 import pandas as pd
 import requests
 from scipy.stats import norm
 
 # ==============================
-# TELEGRAM (variables GitHub)
+# TELEGRAM (via variables env)
 # ==============================
-BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
-CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+if not BOT_TOKEN or not CHAT_ID:
+    raise ValueError("Secrets TELEGRAM manquants")
 
 def send_alert(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message}
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message
+    }
     requests.post(url, data=payload, timeout=5)
 
 # ==============================
@@ -25,7 +32,7 @@ games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
 defense["COEF_DEF"] = defense["DEF_RATING"] / defense["DEF_RATING"].mean()
 
 # ==============================
-# SCAN
+# SCAN PRA OVER
 # ==============================
 for _, row in props[props["STAT"] == "PRA"].iterrows():
     player = row["PLAYER_NAME"]
@@ -42,14 +49,10 @@ for _, row in props[props["STAT"] == "PRA"].iterrows():
     prob_over = 1 - norm.cdf(line, mean, std)
     value = abs(prob_over - 0.5)
 
-   # if prob_over >= 0.57 and value >= 0.12 and p90 <= line + 8:
-    #    send_alert(
-    #        f"OVER PRA AUTO\n{player}\nLigne: {line}\nProba: {round(prob_over*100,1)}%"
-    #    )
-
-# TEST FORCE (à enlever après)
-send_alert(
-    f"🧪 TEST AUTO OK\n{player}\nProba: {round(prob_over*100,1)}%"
-)
-break
-
+    if prob_over >= 0.57 and value >= 0.12 and p90 <= line + 8:
+        send_alert(
+            f"🔥 OVER PRA AUTO\n"
+            f"{player}\n"
+            f"Ligne: {round(line,1)}\n"
+            f"Proba: {round(prob_over*100,1)}%"
+        )
