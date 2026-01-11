@@ -4,3 +4,4 @@ numpy
 scipy
 pyarrow
 nba_api
+requests
