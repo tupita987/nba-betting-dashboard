@@ -6,7 +6,7 @@ from analysis.today_games import get_today_games
 from analysis.b2b import is_back_to_back
 
 # ======================================================
-# CONFIG
+# CONFIG STREAMLIT
 # ======================================================
 st.set_page_config(page_title="Dashboard Paris NBA - AUTO", layout="wide")
 
@@ -24,6 +24,9 @@ def load_all():
 
 games, agg, defense, props, today_games = load_all()
 
+# ======================================================
+# PREPARATION
+# ======================================================
 games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
 defense["COEF_DEF"] = defense["DEF_RATING"] / defense["DEF_RATING"].mean()
 
@@ -31,7 +34,7 @@ defense["COEF_DEF"] = defense["DEF_RATING"] / defense["DEF_RATING"].mean()
 # TITRE
 # ======================================================
 st.title("Tableau de bord Paris NBA — Automatique")
-st.write("PRA • OVER uniquement • domicile & B2B auto")
+st.write("PRA • OVER uniquement • domicile & B2B automatiques")
 
 st.divider()
 
@@ -42,13 +45,13 @@ player = st.selectbox("Choisir un joueur", sorted(agg["PLAYER_NAME"].unique()))
 p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
-team_id = p_row["TEAM_NAME"]
 team_name = p_row["TEAM_NAME"]
 
 # ======================================================
-# CONTEXTE AUTOMATIQUE VIA today_games
+# CONTEXTE AUTOMATIQUE
 # ======================================================
-home = team_name in list(today_games.get("HOME_TEAM_NAME", []))
+home_teams = list(today_games.get("HOME_TEAM_NAME", []))
+home = team_name in home_teams
 coef_home = 1.05 if home else 0.97
 
 try:
@@ -65,7 +68,7 @@ coef_def = min(max(coef_def, 0.92), 1.08)
 # ======================================================
 # AFFICHAGE CONTEXTE
 # ======================================================
-st.subheader("Contexte détecté automatiquement")
+st.subheader("Contexte detecte automatiquement")
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Domicile", "Oui" if home else "Non")
@@ -77,7 +80,7 @@ st.divider()
 # ======================================================
 # STATS
 # ======================================================
-st.subheader("Statistiques (7 derniers matchs)")
+st.subheader("Statistiques recentes (7 matchs)")
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("PTS", round(p_row["PTS_AVG"], 1))
@@ -100,13 +103,13 @@ prob_over = 1 - norm.cdf(line, mean_adj, std)
 value = abs(prob_over - 0.5)
 p90 = p_games["PRA"].quantile(0.9)
 
-st.write("Moyenne ajustée :", round(mean_adj, 2))
-st.write("Probabilité Over :", round(prob_over * 100, 1), "%")
-st.write("Value estimée :", round(value * 100, 1), "%")
+st.write("Moyenne ajustee :", round(mean_adj, 2))
+st.write("Probabilite Over :", round(prob_over * 100, 1), "%")
+st.write("Value estimee :", round(value * 100, 1), "%")
 st.write("P90 PRA :", round(p90, 1))
 
 # ======================================================
-# DECISION FINALE
+# DECISION
 # ======================================================
 decision = "NO BET"
 
@@ -124,15 +127,15 @@ if decision == "OVER":
     stake = bankroll * (0.03 if prob_over >= 0.62 else 0.015)
 
 # ======================================================
-# RESULTAT
+# RESULTAT FINAL
 # ======================================================
-st.subheader("Décision du modèle")
+st.subheader("Decision du modele")
 
 if decision == "OVER":
-    st.success("PARI AUTORISÉ : OVER PRA")
-    st.write("Mise recommandée :", round(stake, 2))
+    st.success("PARI AUTORISE : OVER PRA")
+    st.write("Mise recommandee :", round(stake, 2))
 else:
-    st.warning("NO BET — aucun avantage détecté")
+    st.warning("NO BET — aucun avantage detecte")
 
 st.divider()
-st.write("Outil d'aide à la décision — discipline obligatoire.")
+st.write("Outil d'aide a la decision — discipline obligatoire.")
