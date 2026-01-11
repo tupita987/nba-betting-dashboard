@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
+
 from scipy.stats import norm
 
 from analysis.b2b import is_back_to_back
-from analysis.alert_telegram import send_alert
 
 # ======================================================
 # MAPPING OFFICIEL NBA
