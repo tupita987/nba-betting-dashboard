@@ -62,4 +62,6 @@ else:
 st.subheader("Other markets")
 market = st.selectbox("Market", ["PTS", "PRA", "AST", "REB"])
 
-row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] =_]()]()
+row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] == market)].iloc[0]
+
+
