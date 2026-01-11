@@ -7,8 +7,10 @@ STAKE = 10
 
 games = pd.read_parquet("data_export/games.parquet")
 props = pd.read_parquet("data_export/props.parquet")
+defense = pd.read_parquet("data_export/defense.parquet")
 
 games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
+defense["COEF_DEF"] = defense["DEF_RATING"] / defense["DEF_RATING"].mean()
 
 results = []
 
@@ -22,8 +24,13 @@ for _, row in props[props["STAT"] == "PRA"].iterrows():
         continue
 
     for _, g in p_games.iterrows():
-        line = mean + np.random.normal(0, std * 0.5)
-        prob = 1 - norm.cdf(line, mean, std)
+        team = g["MATCHUP"].split(" ")[-1]
+        if team not in defense["TEAM"].values:
+            continue
+
+        adj_mean = mean * defense[defense["TEAM"] == team]["COEF_DEF"].values[0]
+        line = adj_mean + np.random.normal(0, std * 0.5)
+        prob = 1 - norm.cdf(line, adj_mean, std)
 
         if prob < THRESHOLD:
             continue
