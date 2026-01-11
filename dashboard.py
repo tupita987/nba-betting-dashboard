@@ -42,7 +42,7 @@ player = st.selectbox("Choisir un joueur", sorted(agg["PLAYER_NAME"].unique()))
 p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
-team_id = p_row["TEAM_ID"]
+team_id = p_row["TEAM_NAME"]
 team_name = p_row["TEAM_NAME"]
 
 # ======================================================
@@ -52,7 +52,7 @@ home = team_name in today_games.get("HOME_TEAM_NAME", []).values
 coef_home = 1.05 if home else 0.97
 
 try:
-    b2b = is_back_to_back(team_id)
+    b2b = is_back_to_back(team_name)
 except:
     b2b = False
 
