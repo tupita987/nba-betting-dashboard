@@ -12,3 +12,4 @@ def is_back_to_back(team_name):
 
     games = finder.get_data_frames()[0]
     return not games.empty
+    
