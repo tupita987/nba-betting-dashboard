@@ -28,10 +28,10 @@ games, agg, defense, props = load_data()
 # ======================================================
 st.title("NBA Betting Dashboard")
 
-st.markdown("""
-Analyse des performances joueurs NBA  
-Modele probabiliste base sur les 7 derniers matchs
-""")
+st.markdown(
+    "Analyse des performances joueurs NBA  \n"
+    "Modele probabiliste base sur les 7 derniers matchs"
+)
 
 # ======================================================
 # SELECTION DU JOUEUR
@@ -60,36 +60,4 @@ c4.metric("PRA", round(p_avg["PRA_AVG"], 1))
 # ======================================================
 # GRAPHIQUE
 # ======================================================
-st.subheader("Evolution des points (7 derniers matchs)")
-st.line_chart(p_games.set_index("GAME_DATE")["PTS"])
-
-# ======================================================
-# MODELE OVER / UNDER - POINTS
-# ======================================================
-st.subheader("Analyse du pari - Points (PTS)")
-
-line_pts = st.number_input(
-    "Ligne bookmaker (PTS)",
-    value=float(round(p_avg["PTS_AVG"], 1))
-)
-
-mean_pts = p_games["PTS"].mean()
-std_pts = p_games["PTS"].std()
-if pd.isna(std_pts) or std_pts == 0:
-    std_pts = 5
-
-prob_over_pts = 1 - norm.cdf(line_pts, mean_pts, std_pts)
-
-st.write(f"Probabilite Over : **{round(prob_over_pts * 100, 1)} %**")
-
-if prob_over_pts >= 0.65:
-    st.success("OVER fortement recommande")
-elif prob_over_pts <= 0.35:
-    st.error("UNDER fortement recommande")
-else:
-    st.warning("Aucune value claire")
-
-# ======================================================
-# AUTRES MARCHES : PRA / AST / REB
-# ======================================================
-st.subheader("Anal
+st.subheader("Evolution des points
