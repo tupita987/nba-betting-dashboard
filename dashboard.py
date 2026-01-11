@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 
-BOT_TOKEN = "8414100374:AAGV1DBabq1w8JYzYEltG
--vuG2P10K4mNcc"
+BOT_TOKEN = "8414100374:AAGV1DBabq1w8JYzYEltG-vuG2P10K4mNcc"
 CHAT_ID = "6139600150"
 
 def send_alert(message: str):
