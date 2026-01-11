@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from scipy.stats import norm
 
-from analysis.today_games import get_today_games
 from analysis.b2b import is_back_to_back
 
 # ======================================================
@@ -19,10 +18,9 @@ def load_all():
     agg = pd.read_parquet("data_export/agg.parquet")
     defense = pd.read_parquet("data_export/defense.parquet")
     props = pd.read_parquet("data_export/props.parquet")
-    today_games = get_today_games()
-    return games, agg, defense, props, today_games
+    return games, agg, defense, props
 
-games, agg, defense, props, today_games = load_all()
+games, agg, defense, props = load_all()
 
 # ======================================================
 # PREPARATION
@@ -46,49 +44,30 @@ p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
 # ======================================================
-# DETECTION DYNAMIQUE DE L’EQUIPE (SOURCE BRUTE)
+# DETECTION EQUIPE & DOMICILE VIA MATCHUP
 # ======================================================
-possible_team_cols = [
-    "TEAM_NAME",
-    "TEAM",
-    "TEAM_ABBREVIATION",
-    "TEAM_SHORT_NAME",
-    "TEAM_CITY"
-]
+latest_game = p_games.sort_values("GAME_DATE").iloc[-1]
+matchup = latest_game["MATCHUP"]
 
-team_col = None
-for col in possible_team_cols:
-    if col in p_games.columns:
-        team_col = col
-        break
+# Ex: "ATL vs BOS" ou "ATL @ BOS"
+player_team = matchup.split(" ")[0]
 
-if team_col is None:
-    st.error(
-        "Impossible de détecter la colonne équipe dans games.parquet.\n"
-        f"Colonnes disponibles : {list(p_games.columns)}"
-    )
-    st.stop()
-
-team_name = (
-    p_games
-    .sort_values("GAME_DATE")
-    .iloc[-1][team_col]
-)
-
-# ======================================================
-# CONTEXTE AUTOMATIQUE
-# ======================================================
-home_teams = list(today_games.get("HOME_TEAM_NAME", []))
-home = team_name in home_teams
+home = "vs" in matchup
 coef_home = 1.05 if home else 0.97
 
+# ======================================================
+# BACK TO BACK (via equipe)
+# ======================================================
 try:
-    b2b = is_back_to_back(team_name)
+    b2b = is_back_to_back(player_team)
 except:
     b2b = False
 
 coef_fatigue = 0.96 if b2b else 1.0
 
+# ======================================================
+# ADVERSAIRE
+# ======================================================
 opponent = st.selectbox("Equipe adverse", sorted(defense["TEAM"].unique()))
 coef_def = defense.loc[defense["TEAM"] == opponent, "COEF_DEF"].values[0]
 coef_def = min(max(coef_def, 0.92), 1.08)
@@ -101,7 +80,7 @@ st.subheader("Contexte détecté automatiquement")
 c1, c2, c3 = st.columns(3)
 c1.metric("Domicile", "Oui" if home else "Non")
 c2.metric("Back-to-back", "Oui" if b2b else "Non")
-c3.metric("Adversaire", opponent)
+c3.metric("Equipe", player_team)
 
 st.divider()
 
