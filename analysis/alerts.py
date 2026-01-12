@@ -1,3 +1,19 @@
+import json
+import requests
+from datetime import date
+from pathlib import Path
+
+STATE_FILE = Path("data_export/alerts_sent.json")
+
+def _load_state():
+    if STATE_FILE.exists():
+        return json.loads(STATE_FILE.read_text())
+    return {}
+
+def _save_state(state):
+    STATE_FILE.parent.mkdir(exist_ok=True)
+    STATE_FILE.write_text(json.dumps(state))
+
 def send_alert(
     bot_token,
     chat_id,
@@ -8,7 +24,8 @@ def send_alert(
     model_line,
     book_line,
     odds,
-    prob
+    prob,
+    stake
 ):
     state = _load_state()
     today = str(date.today())
@@ -25,10 +42,10 @@ def send_alert(
         f"🏠 *Domicile* : {'Oui' if home else 'Non'} | "
         f"🔁 *B2B* : {'Oui' if b2b else 'Non'}\n\n"
         f"📊 *PRA Modèle* : {model_line}\n"
-        f"🎯 *Ligne Book* : {book_line} @ {odds}\n\n"
+        f"🎯 *Ligne Winamax* : {book_line} @ {odds}\n\n"
         f"📈 *Probabilité Over* : {round(prob*100,1)} %\n"
-        f"💎 *Confiance* : A\n\n"
-        "⚠️ *Value détectée — opportunité rare*"
+        f"💰 *Mise conseillée (Kelly 25%)* : {stake} €\n\n"
+        "⚠️ *Value détectée — discipline requise*"
     )
 
     try:
@@ -41,10 +58,8 @@ def send_alert(
             },
             timeout=5
         )
-
         if r.status_code != 200:
             return False
-
     except Exception:
         return False
 
