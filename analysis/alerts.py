@@ -47,16 +47,24 @@ def send_alert(
         "⚠️ *Value détectée — opportunité rare*"
     )
 
-    requests.post(
-        f"https://api.telegram.org/bot{bot_token}/sendMessage",
-        data={
-            "chat_id": chat_id,
-            "text": message,
-            "parse_mode": "Markdown"
-        },
-        timeout=5
-    )
+        try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            data={
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            },
+            timeout=5
+        )
+
+        if r.status_code != 200:
+            return False
+
+    except Exception:
+        return False
 
     state[key] = True
     _save_state(state)
     return True
+
