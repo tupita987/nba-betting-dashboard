@@ -38,6 +38,15 @@ player = st.selectbox(
 p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
+# ===== Calcul PRA si absent =====
+if "PRA" not in p_games.columns:
+    p_games = p_games.copy()
+    p_games["PRA"] = (
+        p_games["PTS"].fillna(0) +
+        p_games["REB"].fillna(0) +
+        p_games["AST"].fillna(0)
+    )
+
 pra_mean = round(p_row["PRA_AVG"], 1)
 line = round(pra_mean, 1)
 odds = 1.9
