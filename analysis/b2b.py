@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 def is_back_to_back(team_abbr: str) -> bool:
     """
     Détection B2B sécurisée.
-    Si l'API NBA échoue → retourne False (safe).
+    Si l'API NBA échoue → retourne False (safe fallback).
     """
     try:
         yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -20,5 +20,4 @@ def is_back_to_back(team_abbr: str) -> bool:
         return not games.empty
 
     except Exception:
-        # API down / lente / bloquée → SAFE FALLBACK
         return False
