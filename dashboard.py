@@ -4,17 +4,13 @@ from scipy.stats import norm
 
 from analysis.b2b import is_back_to_back
 from analysis.odds import fetch_winamax_pra
-from analysis.alerts import send_alert
+from analysis.alerts import send_alert, send_combo_alert
 from analysis.explain import explain
 from analysis.roi import load_roi
-from analysis.combine import build_smart_combos
+from analysis.combine import build_best_combo
 
 # ================= CONFIG =================
-st.set_page_config(
-    page_title="Dashboard Paris NBA — PRA",
-    page_icon="🏀",
-    layout="wide"
-)
+st.set_page_config(page_title="Dashboard Paris NBA — PRA", layout="wide")
 
 BOT_TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
@@ -39,71 +35,36 @@ def load_winamax():
 
 winamax = load_winamax()
 
-# ================= ANALYSE JOUEUR =================
+# ================= UI =================
 st.title("🏀 Dashboard Paris NBA — PRA")
 
+# ----------- ANALYSE JOUEUR -----------
 player = st.selectbox("👤 Joueur", sorted(agg["PLAYER_NAME"].unique()))
 p_games = games[games["PLAYER_NAME"] == player]
 
 latest = p_games.sort_values("GAME_DATE").iloc[-1]
 matchup = latest["MATCHUP"]
-team_abbr = matchup.split(" ")[0]
-home = "vs" in matchup
-b2b = is_back_to_back(team_abbr)
 
 row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] == "PRA")].iloc[0]
 model_line = round(row["MEAN"], 1)
 std = row["STD"] if row["STD"] > 0 else 1
 
-# --- Winamax ---
 book_line = model_line
 odds = 1.90
-if not winamax.empty and "PLAYER_NAME" in winamax.columns:
-    wm = winamax[winamax["PLAYER_NAME"].str.lower() == player.lower()]
-    if not wm.empty:
-        wm = wm.iloc[0]
-        book_line = wm["LINE"]
-        odds = wm["ODDS"]
 
 prob = 1 - norm.cdf(book_line, model_line, std)
 value = abs(prob - 0.5)
 p90 = p_games["PRA"].quantile(0.9)
 
-if prob >= 0.62 and value >= 0.15 and p90 <= book_line + 6:
-    decision = "OVER A"
-elif prob >= 0.58 and value >= 0.12:
-    decision = "OVER B"
-else:
-    decision = "NO BET"
+decision = "OVER A" if prob >= 0.62 and value >= 0.15 and p90 <= book_line + 6 else "NO BET"
 
-# ================= AFFICHAGE =================
 st.subheader("📌 Décision")
+st.success("🟢 OVER PRA — A") if decision == "OVER A" else st.error("❌ NO BET")
 
-if decision == "OVER A":
-    st.success("🟢 OVER PRA — CONFIANCE A")
-    send_alert(
-        BOT_TOKEN, CHAT_ID,
-        player, matchup, home, b2b,
-        model_line, book_line, odds, prob
-    )
-elif decision == "OVER B":
-    st.warning("🟡 OVER PRA — CONFIANCE B")
-else:
-    st.error("❌ NO BET")
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("📊 PRA modèle", model_line)
-c2.metric("🎯 Ligne Book", f"{book_line} @ {odds}")
-c3.metric("📈 Proba Over", f"{round(prob*100,1)} %")
-c4.metric("🏠 / 🔁", f"{'Home' if home else 'Away'} | {'B2B' if b2b else 'Rest'}")
-
-st.info(explain(decision, prob, value, p90, book_line))
-
-# ================= COMBINÉ INTELLIGENT =================
+# ----------- COMBINÉ -----------
 st.divider()
-st.subheader("🧠 Combiné intelligent (OVER A uniquement)")
+st.subheader("🧠 Combiné intelligent du jour")
 
-# Construire la liste OVER A du jour
 over_list = []
 
 for _, r in props.iterrows():
@@ -112,9 +73,6 @@ for _, r in props.iterrows():
         continue
 
     last = pg.sort_values("GAME_DATE").iloc[-1]
-    m = last["MATCHUP"]
-    team = m.split(" ")[0]
-
     line = round(r["MEAN"], 1)
     std = r["STD"] if r["STD"] > 0 else 1
     prob_i = 1 - norm.cdf(line, r["MEAN"], std)
@@ -124,25 +82,18 @@ for _, r in props.iterrows():
     if prob_i >= 0.62 and value_i >= 0.15 and p90_i <= line + 6:
         over_list.append({
             "PLAYER_NAME": r["PLAYER_NAME"],
-            "MATCHUP": m,
+            "MATCHUP": last["MATCHUP"],
             "PROB": prob_i,
             "ODDS": 1.90
         })
 
 over_df = pd.DataFrame(over_list)
+combo = build_best_combo(over_df)
 
-if over_df.empty:
-    st.info("Aucun combiné intelligent disponible aujourd’hui")
+if combo:
+    st.success("🔥 Combiné intelligent détecté")
+    st.write(combo)
+
+    send_combo_alert(BOT_TOKEN, CHAT_ID, combo)
 else:
-    combos = build_smart_combos(over_df)
-    st.dataframe(pd.DataFrame(combos), use_container_width=True)
-
-# ================= ROI =================
-st.divider()
-st.subheader("🏆 Classement ROI")
-
-roi = load_roi()
-if roi.empty:
-    st.info("Pas encore assez de paris validés")
-else:
-    st.dataframe(roi.head(10), use_container_width=True)
+    st.info("Aucun combiné intelligent aujourd’hui")
