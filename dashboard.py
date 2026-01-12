@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from scipy.stats import norm
 from pathlib import Path
+from analysis.explain import expliquer_decision
 
 # ================= CONFIG =================
 st.set_page_config(
@@ -12,11 +13,15 @@ st.set_page_config(
 DATA_PARIS = Path("data/paris.csv")
 DATA_PARIS.parent.mkdir(exist_ok=True)
 
-# ================= CHARGEMENT DATA =================
+# ================= DATA =================
 games = pd.read_csv("data/players_7_games.csv")
 agg = pd.read_csv("data/players_aggregated.csv")
 props = pd.read_csv("data/props_model.csv")
 today = pd.read_csv("data/today_games.csv")
+
+# ================= PRA GLOBAL =================
+if "PRA" not in games.columns:
+    games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
 
 # ================= HISTORIQUE PARIS =================
 if DATA_PARIS.exists():
@@ -35,46 +40,61 @@ player = st.selectbox(
     sorted(agg["PLAYER_NAME"].unique())
 )
 
-p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
-p_games = games[games["PLAYER_NAME"] == player]
+p_games = games[games["PLAYER_NAME"] == player].copy()
 
-# ===== Calcul PRA si absent =====
-if "PRA" not in p_games.columns:
-    p_games = p_games.copy()
-    p_games["PRA"] = (
-        p_games["PTS"].fillna(0) +
-        p_games["REB"].fillna(0) +
-        p_games["AST"].fillna(0)
-    )
+# ================= PRA MODELE (OPTION C) =================
+pra_modele = (
+    p_games
+    .sort_values("GAME_DATE")
+    .tail(7)["PRA"]
+    .mean()
+)
+pra_modele = round(pra_modele, 1)
 
-pra_mean = round(p_row["PRA_AVG"], 1)
-line = round(pra_mean, 1)
-odds = 1.9
+# ================= LIGNE BOOK (OPTION B) =================
+row_prop = props[props["PLAYER_NAME"] == player]
 
+if not row_prop.empty:
+    ligne = float(row_prop.iloc[0]["MEAN"])
+    cote = float(row_prop.iloc[0].get("ODDS", 1.9))
+else:
+    ligne = round(pra_modele + 1.5, 1)
+    cote = 1.9
+
+# ================= PROBA =================
 std = p_games["PRA"].std()
-if pd.isna(std) or std == 0:
+if pd.isna(std) or std < 1:
     std = 5
 
-prob_over = 1 - norm.cdf(line, pra_mean, std)
-decision = "OVER" if prob_over >= 0.62 else "NO BET"
+prob_over = 1 - norm.cdf(ligne, pra_modele, std)
+prob_over = round(prob_over, 3)
 
 # ================= DECISION =================
+if prob_over >= 0.62:
+    decision = "OVER"
+elif prob_over <= 0.38:
+    decision = "UNDER"
+else:
+    decision = "NO BET"
+
+# ================= AFFICHAGE =================
 st.divider()
 st.subheader("📌 Décision du modèle")
 
 if decision == "OVER":
     st.success("✅ PARI AUTORISÉ — OVER PRA")
+elif decision == "UNDER":
+    st.warning("🟡 UNDER intéressant")
 else:
     st.error("❌ NO BET")
 
 c1, c2, c3, c4 = st.columns(4)
+c1.metric("📊 PRA modèle (7 matchs)", pra_modele)
+c2.metric("🎯 Ligne bookmaker", f"{ligne} @ {cote}")
+c3.metric("📈 Probabilité Over", f"{round(prob_over*100,1)} %")
+c4.metric("📉 Écart", round(pra_modele - ligne, 1))
 
-c1.metric("📊 PRA modèle", pra_mean)
-c2.metric("🎯 Ligne Book", f"{line} @ {odds}")
-c3.metric("📈 Proba Over", f"{round(prob_over*100,1)} %")
-c4.metric("🏟️ Contexte", "Away | Rest")
-
-st.info("Probabilité trop faible | Pas assez de value | Distribution trop large")
+st.info(expliquer_decision(decision, prob_over, pra_modele, ligne))
 
 # ================= PARIER =================
 st.divider()
@@ -90,8 +110,8 @@ if submit:
         "DATE": pd.Timestamp.today().date(),
         "JOUEUR": player,
         "TYPE": type_pari,
-        "LIGNE": line,
-        "COTE": odds,
+        "LIGNE": ligne,
+        "COTE": cote,
         "MISE": mise,
         "RESULTAT": "EN ATTENTE",
         "PROFIT": 0
@@ -105,7 +125,7 @@ st.divider()
 st.subheader("📒 Historique des paris")
 
 if paris.empty:
-    st.info("Aucun pari enregistré pour le moment.")
+    st.info("Aucun pari enregistré.")
 else:
     editable = st.data_editor(
         paris,
@@ -118,11 +138,10 @@ else:
         }
     )
 
-    # Calcul profit
     def calc_profit(row):
         if row["RESULTAT"] == "GAGNÉ":
             return round(row["MISE"] * (row["COTE"] - 1), 2)
-        elif row["RESULTAT"] == "PERDU":
+        if row["RESULTAT"] == "PERDU":
             return -row["MISE"]
         return 0
 
@@ -142,21 +161,20 @@ else:
 
 # ================= CLASSEMENT =================
 st.divider()
-st.subheader("🏆 Classement joueurs rentables (ROI réel)")
+st.subheader("🏆 Classement joueurs rentables")
 
-if paris[paris["RESULTAT"] != "EN ATTENTE"].empty:
+valid = paris[paris["RESULTAT"] != "EN ATTENTE"]
+
+if valid.empty:
     st.info("Pas encore assez de paris validés")
 else:
     classement = (
-        paris[paris["RESULTAT"] != "EN ATTENTE"]
-        .groupby("JOUEUR")
-        .agg(
-            MISE=("MISE", "sum"),
-            PROFIT=("PROFIT", "sum")
-        )
+        valid.groupby("JOUEUR")
+        .agg(MISE=("MISE", "sum"), PROFIT=("PROFIT", "sum"))
         .reset_index()
     )
     classement["ROI (%)"] = classement["PROFIT"] / classement["MISE"] * 100
+
     st.dataframe(
         classement.sort_values("ROI (%)", ascending=False),
         use_container_width=True
