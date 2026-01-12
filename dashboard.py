@@ -63,16 +63,32 @@ if pd.isna(std) or std < 1:
 prob_over = 1 - norm.cdf(ligne, pra_modele, std)
 prob_over = round(prob_over, 3)
 
-# ================= DÉCISION (AVEC VALUE COTE) =================
-proba_cote = 1 / cote          # probabilité implicite bookmaker
-marge_value = 0.05             # 5 % de marge de sécurité
+# ================= VÉRIFICATION LIGNE BOOK =================
+ligne_disponible = (
+    ligne_book is not None
+    and cote is not None
+    and ligne_book > 0
+    and cote > 1.01
+)
 
-if prob_over >= 0.62 and prob_over > proba_cote + marge_value:
-    decision = "OVER"
-elif prob_over <= 0.38 and (1 - prob_over) > proba_cote + marge_value:
-    decision = "UNDER"
-else:
+if not ligne_disponible:
     decision = "NO BET"
+    reason = "⏳ Ligne PRA Winamax non encore publiée"
+
+# ================= DÉCISION (AVEC VALUE COTE) =================
+if ligne_disponible:
+    proba_cote = 1 / cote
+    marge_value = 0.05
+
+    if prob_over >= 0.62 and prob_over > proba_cote + marge_value:
+        decision = "OVER"
+        reason = "Value positive détectée"
+    elif prob_over <= 0.38 and (1 - prob_over) > proba_cote + marge_value:
+        decision = "UNDER"
+        reason = "Value positive détectée"
+    else:
+        decision = "NO BET"
+        reason = "Pas assez de value"
 
 
 # ================= AFFICHAGE =================
