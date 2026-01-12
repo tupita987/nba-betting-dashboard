@@ -84,3 +84,13 @@ st.write(f"PRA modèle : {line_model}")
 st.write(f"Ligne Winamax : {line_book} @ {odds_book}")
 st.write(f"Probabilité Over : {round(prob*100,1)} %")
 st.write(f"Domicile : {'Oui' if home else 'Non'} | B2B : {'Oui' if b2b else 'Non'}")
+from analysis.roi import load_roi
+
+st.divider()
+st.subheader("Classement joueurs rentables (ROI réel)")
+
+roi = load_roi()
+if roi.empty:
+    st.info("Pas encore assez de paris validés")
+else:
+    st.dataframe(roi.head(10))
