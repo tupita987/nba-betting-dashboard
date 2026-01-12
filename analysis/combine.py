@@ -1,34 +1,30 @@
 import itertools
 
-def build_smart_combos(over_df, max_legs=2):
+def build_best_combo(over_df):
     """
-    Construit des combinés intelligents à partir des OVER A
-    - max 2 joueurs
-    - joueurs de matchs différents
+    Retourne le MEILLEUR combiné intelligent (max 2 legs)
     """
-    combos = []
+    best = None
+    best_score = 0
 
     players = over_df.to_dict("records")
 
-    for combo in itertools.combinations(players, max_legs):
+    for combo in itertools.combinations(players, 2):
         matchups = {p["MATCHUP"] for p in combo}
-        if len(matchups) < len(combo):
-            continue  # même match → rejet
+        if len(matchups) < 2:
+            continue
 
-        prob_combo = 1
-        odds_combo = 1
-        names = []
+        prob = combo[0]["PROB"] * combo[1]["PROB"]
+        odds = combo[0]["ODDS"] * combo[1]["ODDS"]
 
-        for p in combo:
-            prob_combo *= p["PROB"]
-            odds_combo *= p["ODDS"]
-            names.append(p["PLAYER_NAME"])
+        score = prob * odds  # critère EV simple
 
-        combos.append({
-            "JOUEURS": " + ".join(names),
-            "PROB_COMBO": round(prob_combo, 3),
-            "ODDS_COMBO": round(odds_combo, 2),
-            "LEGS": len(combo)
-        })
+        if score > best_score:
+            best_score = score
+            best = {
+                "players": [combo[0]["PLAYER_NAME"], combo[1]["PLAYER_NAME"]],
+                "prob": prob,
+                "odds": round(odds, 2)
+            }
 
-    return combos
+    return best
