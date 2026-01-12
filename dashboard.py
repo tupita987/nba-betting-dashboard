@@ -61,7 +61,12 @@ row_prop = props[props["PLAYER_NAME"] == player]
 
 if not row_prop.empty:
     ligne = float(row_prop.iloc[0]["MEAN"])
-    cote = float(row_prop.iloc[0].get("ODDS", None))
+
+if "ODDS" in row_prop.columns and pd.notna(row_prop.iloc[0]["ODDS"]):
+    cote = float(row_prop.iloc[0]["ODDS"])
+else:
+    cote = None
+
 
 # ================= PROBABILITÉ (SI LIGNE EXISTE) =================
 std = p_games["PRA"].std()
