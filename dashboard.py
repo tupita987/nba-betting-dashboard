@@ -2,29 +2,24 @@ import streamlit as st
 import pandas as pd
 import requests
 from scipy.stats import norm
+from datetime import datetime
+from pathlib import Path
 
 from analysis.b2b import is_back_to_back
 
 # ======================================================
-# TELEGRAM (SECURISE VIA SECRETS)
+# TELEGRAM (SECRETS)
 # ======================================================
 BOT_TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
 
-def send_alert(message: str):
+def send_alert(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
-    try:
-        requests.post(url, data=payload, timeout=5)
-    except Exception as e:
-        st.error(f"Erreur Telegram : {e}")
+    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
+    requests.post(url, data=payload, timeout=5)
 
 # ======================================================
-# MAPPING OFFICIEL NBA
+# NBA TEAM MAP
 # ======================================================
 TEAM_MAP = {
     "ATL": "Atlanta Hawks", "BOS": "Boston Celtics", "BKN": "Brooklyn Nets",
@@ -42,149 +37,112 @@ TEAM_MAP = {
 }
 
 # ======================================================
-# CONFIG STREAMLIT
+# DECISION LOGGER (AXE 5)
+# ======================================================
+LOG_PATH = Path("data/decisions.csv")
+LOG_PATH.parent.mkdir(exist_ok=True)
+
+if not LOG_PATH.exists():
+    pd.DataFrame(columns=[
+        "date", "player", "team", "line",
+        "prob_over", "decision"
+    ]).to_csv(LOG_PATH, index=False)
+
+def log_decision(player, team, line, prob, decision):
+    df = pd.read_csv(LOG_PATH)
+    df.loc[len(df)] = [
+        datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        player, team, line, round(prob, 4), decision
+    ]
+    df.to_csv(LOG_PATH, index=False)
+
+# ======================================================
+# CONFIG
 # ======================================================
 st.set_page_config(page_title="Dashboard Paris NBA", layout="wide")
 
-# ======================================================
-# LOAD DATA
-# ======================================================
 @st.cache_data(ttl=3600)
 def load_all():
-    games = pd.read_parquet("data_export/games.parquet")
-    agg = pd.read_parquet("data_export/agg.parquet")
-    defense = pd.read_parquet("data_export/defense.parquet")
-    props = pd.read_parquet("data_export/props.parquet")
-    return games, agg, defense, props
+    return (
+        pd.read_parquet("data_export/games.parquet"),
+        pd.read_parquet("data_export/agg.parquet"),
+        pd.read_parquet("data_export/defense.parquet"),
+        pd.read_parquet("data_export/props.parquet"),
+    )
 
 games, agg, defense, props = load_all()
-
-# ======================================================
-# PREPARATION
-# ======================================================
 games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
-defense["COEF_DEF"] = defense["DEF_RATING"] / defense["DEF_RATING"].mean()
 
 # ======================================================
-# UI
-# ======================================================
-st.title("Tableau de bord Paris NBA")
-st.write("PRA • OVER uniquement • alertes Telegram automatiques")
-
-st.divider()
-
-# ======================================================
-# SELECTION JOUEUR
+# SELECTION
 # ======================================================
 player = st.selectbox("Choisir un joueur", sorted(agg["PLAYER_NAME"].unique()))
 p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
-# ======================================================
-# CONTEXTE VIA MATCHUP
-# ======================================================
 latest_game = p_games.sort_values("GAME_DATE").iloc[-1]
 matchup = latest_game["MATCHUP"]
 
 team_abbr = matchup.split(" ")[0]
 team_full = TEAM_MAP.get(team_abbr, team_abbr)
-
 home = "vs" in matchup
-coef_home = 1.05 if home else 0.97
 
 try:
     b2b = is_back_to_back(team_abbr)
 except:
     b2b = False
 
-coef_fatigue = 0.96 if b2b else 1.0
-
 opponent = st.selectbox("Equipe adverse", sorted(defense["TEAM"].unique()))
-coef_def = defense.loc[defense["TEAM"] == opponent, "COEF_DEF"].values[0]
-coef_def = min(max(coef_def, 0.92), 1.08)
+coef_def = defense.loc[defense["TEAM"] == opponent, "DEF_RATING"].values[0] / defense["DEF_RATING"].mean()
 
 # ======================================================
-# CONTEXTE
-# ======================================================
-c1, c2, c3 = st.columns(3)
-c1.metric("Equipe", team_full)
-c2.metric("Domicile", "Oui" if home else "Non")
-c3.metric("Back-to-back", "Oui" if b2b else "Non")
-
-st.divider()
-
-# ======================================================
-# STATS
-# ======================================================
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("PTS", round(p_row["PTS_AVG"], 1))
-c2.metric("REB", round(p_row["REB_AVG"], 1))
-c3.metric("AST", round(p_row["AST_AVG"], 1))
-c4.metric("PRA", round(p_row["PRA_AVG"], 1))
-
-# ======================================================
-# ANALYSE PRA
+# PRA ANALYSIS
 # ======================================================
 row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] == "PRA")].iloc[0]
 line = st.number_input("Ligne bookmaker PRA", value=float(round(row["MEAN"], 1)))
 
-mean_adj = row["MEAN"] * coef_def * coef_home * coef_fatigue
+mean = row["MEAN"] * (1.05 if home else 0.97) * (0.96 if b2b else 1.0) * coef_def
 std = row["STD"] if row["STD"] > 0 else 1
 
-prob_over = 1 - norm.cdf(line, mean_adj, std)
-value = abs(prob_over - 0.5)
+prob_over = 1 - norm.cdf(line, mean, std)
 p90 = p_games["PRA"].quantile(0.9)
+value = abs(prob_over - 0.5)
 
-st.write("Probabilité Over :", round(prob_over * 100, 1), "%")
-st.write("Value estimée :", round(value * 100, 1), "%")
-st.write("P90 PRA :", round(p90, 1))
-
-# ======================================================
-# DECISION
-# ======================================================
 decision = "NO BET"
 if prob_over >= 0.57 and value >= 0.12 and p90 <= line + 8:
     decision = "OVER"
 
 # ======================================================
-# MISE
-# ======================================================
-bankroll = st.number_input("Bankroll", value=500.0)
-stake = bankroll * (0.03 if prob_over >= 0.62 else 0.015) if decision == "OVER" else 0
-
-# ======================================================
-# ALERTES TELEGRAM + ANTI-SPAM
-# ======================================================
-alert_key = f"{player}_{line}_{round(prob_over,2)}"
-if "sent_alerts" not in st.session_state:
-    st.session_state["sent_alerts"] = set()
-
-if decision == "OVER":
-    st.success("PARI AUTORISÉ : OVER PRA")
-    st.write("Mise recommandée :", round(stake, 2))
-
-    if alert_key not in st.session_state["sent_alerts"]:
-        message = f"""
-🔥 <b>OVER PRA VALIDÉ</b>
-
-👤 {player}
-🏀 {team_full}
-📏 Ligne : {line}
-📈 Proba : {round(prob_over*100,1)} %
-
-🏠 Domicile : {'Oui' if home else 'Non'}
-🔁 B2B : {'Oui' if b2b else 'Non'}
-💰 Mise : {round(stake,2)}
-"""
-        send_alert(message)
-        st.session_state["sent_alerts"].add(alert_key)
-else:
-    st.warning("NO BET")
-
-# ======================================================
-# TEST MANUEL
+# AXE 1 — DECISION EN HAUT
 # ======================================================
 st.divider()
-if st.button("Envoyer une alerte test"):
-    send_alert("✅ Test Telegram OK")
-    st.success("Alerte de test envoyée")
+if decision == "OVER":
+    st.success(f"✅ PARI AUTORISÉ — OVER PRA ({team_full})")
+else:
+    st.error("❌ NO BET — Aucune value détectée")
+
+st.write(f"Probabilité Over : {round(prob_over*100,1)} %")
+
+# ======================================================
+# LOG + ALERTE
+# ======================================================
+log_decision(player, team_full, line, prob_over, decision)
+
+alert_key = f"{player}_{line}"
+if "alerts" not in st.session_state:
+    st.session_state["alerts"] = set()
+
+if decision == "OVER" and alert_key not in st.session_state["alerts"]:
+    send_alert(
+        f"OVER PRA\n{player}\n{team_full}\nLigne {line}\nProba {round(prob_over*100,1)}%"
+    )
+    st.session_state["alerts"].add(alert_key)
+
+# ======================================================
+# HISTORIQUE (AXE 5)
+# ======================================================
+st.divider()
+st.subheader("Historique des décisions")
+
+history = pd.read_csv(LOG_PATH)
+st.dataframe(history.tail(50), use_container_width=True)
