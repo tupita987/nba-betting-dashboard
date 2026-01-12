@@ -48,6 +48,8 @@ def load_winamax():
     return fetch_winamax_pra(ODDS_KEY)
 
 winamax = load_winamax()
+st.write("DEBUG winamax columns:", list(winamax.columns))
+st.write("DEBUG winamax preview:", winamax.head())
 
 # ======================================================
 # LOG
