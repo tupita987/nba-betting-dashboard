@@ -1,18 +1,23 @@
 import pandas as pd
 
-df = pd.read_csv("data\\bets_history.csv")
+def load_roi():
+    try:
+        df = pd.read_csv("data_export/decisions.csv")
+    except:
+        return pd.DataFrame()
 
-if df.empty:
-    print("No bets yet")
-    exit()
+    df = df[df["RESULT"].isin(["WIN", "LOSS"])]
+    df["PROFIT"] = df["STAKE"] * (df["ODDS"] - 1)
+    df.loc[df["RESULT"] == "LOSS", "PROFIT"] = -df["STAKE"]
 
-total_stake = df["STAKE"].sum()
-total_profit = df["PROFIT"].sum()
-roi = (total_profit / total_stake) * 100 if total_stake > 0 else 0
-winrate = (df["RESULT"] == "WIN").mean() * 100
+    roi = (
+        df.groupby("PLAYER_NAME")
+        .agg(
+            BETS=("RESULT", "count"),
+            PROFIT=("PROFIT", "sum")
+        )
+        .reset_index()
+    )
 
-print("Total bets:", len(df))
-print("Total stake:", round(total_stake, 2))
-print("Total profit:", round(total_profit, 2))
-print("ROI %:", round(roi, 2))
-print("Winrate %:", round(winrate, 2))
+    roi["ROI"] = roi["PROFIT"] / (roi["BETS"] * df["STAKE"].mean()) * 100
+    return roi.sort_values("ROI", ascending=False)
