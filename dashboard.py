@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from scipy.stats import norm
 from pathlib import Path
-from analysis.explain import expliquer_decision
 
 # ================= CONFIG =================
 st.set_page_config(
@@ -13,15 +12,14 @@ st.set_page_config(
 DATA_PARIS = Path("data/paris.csv")
 DATA_PARIS.parent.mkdir(exist_ok=True)
 
-# ================= DATA =================
+# ================= CHARGEMENT DONNÉES =================
 games = pd.read_csv("data/players_7_games.csv")
 agg = pd.read_csv("data/players_aggregated.csv")
 props = pd.read_csv("data/props_model.csv")
-today = pd.read_csv("data/today_games.csv")
 
-# ================= PRA GLOBAL =================
+# ================= PRA =================
 if "PRA" not in games.columns:
-    games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
+    games["PRA"] = games["PTS"].fillna(0) + games["REB"].fillna(0) + games["AST"].fillna(0)
 
 # ================= HISTORIQUE PARIS =================
 if DATA_PARIS.exists():
@@ -35,14 +33,10 @@ else:
 # ================= UI =================
 st.title("🏀 Dashboard Paris NBA — PRA")
 
-player = st.selectbox(
-    "👤 Joueur",
-    sorted(agg["PLAYER_NAME"].unique())
-)
-
+player = st.selectbox("👤 Joueur", sorted(agg["PLAYER_NAME"].unique()))
 p_games = games[games["PLAYER_NAME"] == player].copy()
 
-# ================= PRA MODELE (OPTION C) =================
+# ================= PRA MODÈLE (7 DERNIERS MATCHS) =================
 pra_modele = (
     p_games
     .sort_values("GAME_DATE")
@@ -51,17 +45,17 @@ pra_modele = (
 )
 pra_modele = round(pra_modele, 1)
 
-# ================= LIGNE BOOK (OPTION B) =================
+# ================= LIGNE BOOKMAKER (OPTION B) =================
 row_prop = props[props["PLAYER_NAME"] == player]
 
 if not row_prop.empty:
     ligne = float(row_prop.iloc[0]["MEAN"])
-    cote = float(row_prop.iloc[0].get("ODDS", 1.9))
+    cote = float(row_prop.iloc[0].get("ODDS", 1.90))
 else:
     ligne = round(pra_modele + 1.5, 1)
-    cote = 1.9
+    cote = 1.90
 
-# ================= PROBA =================
+# ================= PROBABILITÉ =================
 std = p_games["PRA"].std()
 if pd.isna(std) or std < 1:
     std = 5
@@ -69,7 +63,7 @@ if pd.isna(std) or std < 1:
 prob_over = 1 - norm.cdf(ligne, pra_modele, std)
 prob_over = round(prob_over, 3)
 
-# ================= DECISION =================
+# ================= DÉCISION =================
 if prob_over >= 0.62:
     decision = "OVER"
 elif prob_over <= 0.38:
@@ -84,7 +78,7 @@ st.subheader("📌 Décision du modèle")
 if decision == "OVER":
     st.success("✅ PARI AUTORISÉ — OVER PRA")
 elif decision == "UNDER":
-    st.warning("🟡 UNDER intéressant")
+    st.warning("🟡 UNDER intéressant mais non prioritaire")
 else:
     st.error("❌ NO BET")
 
@@ -92,33 +86,33 @@ c1, c2, c3, c4 = st.columns(4)
 c1.metric("📊 PRA modèle (7 matchs)", pra_modele)
 c2.metric("🎯 Ligne bookmaker", f"{ligne} @ {cote}")
 c3.metric("📈 Probabilité Over", f"{round(prob_over*100,1)} %")
-c4.metric("📉 Écart", round(pra_modele - ligne, 1))
+c4.metric("📉 Écart PRA - Ligne", round(pra_modele - ligne, 1))
 
-st.info(expliquer_decision(decision, prob_over, pra_modele, ligne))
-
-# ================= PARIER =================
+# ================= PARIER (UNIQUEMENT SI OVER) =================
 st.divider()
-st.subheader("💰 Enregistrer un pari")
+st.subheader("💰 Parier")
 
-with st.form("form_pari"):
-    mise = st.number_input("Mise (€)", 1.0, 500.0, 10.0, step=1.0)
-    type_pari = st.selectbox("Type de pari", ["OVER PRA", "UNDER PRA"])
-    submit = st.form_submit_button("📥 Enregistrer le pari")
+if decision == "OVER":
+    with st.form("form_pari"):
+        mise = st.number_input("Mise (€)", 1.0, 500.0, 10.0, step=1.0)
+        submit = st.form_submit_button("📥 Enregistrer le pari")
 
-if submit:
-    new_row = {
-        "DATE": pd.Timestamp.today().date(),
-        "JOUEUR": player,
-        "TYPE": type_pari,
-        "LIGNE": ligne,
-        "COTE": cote,
-        "MISE": mise,
-        "RESULTAT": "EN ATTENTE",
-        "PROFIT": 0
-    }
-    paris = pd.concat([paris, pd.DataFrame([new_row])])
-    paris.to_csv(DATA_PARIS, index=False)
-    st.success("Pari enregistré ✔️")
+    if submit:
+        new_row = {
+            "DATE": pd.Timestamp.today().date(),
+            "JOUEUR": player,
+            "TYPE": "OVER PRA",
+            "LIGNE": ligne,
+            "COTE": cote,
+            "MISE": mise,
+            "RESULTAT": "EN ATTENTE",
+            "PROFIT": 0
+        }
+        paris = pd.concat([paris, pd.DataFrame([new_row])])
+        paris.to_csv(DATA_PARIS, index=False)
+        st.success("Pari enregistré ✔️")
+else:
+    st.info("Pari désactivé — aucune value détectée")
 
 # ================= HISTORIQUE =================
 st.divider()
