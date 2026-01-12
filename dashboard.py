@@ -94,3 +94,7 @@ if roi.empty:
     st.info("Pas encore assez de paris validés")
 else:
     st.dataframe(roi.head(10))
+from analysis.explain import explain
+
+st.subheader("Explication du modèle")
+st.info(explain(decision, prob, value, p90, line_book))
