@@ -14,7 +14,10 @@ def _save_state(state):
     STATE_FILE.parent.mkdir(exist_ok=True)
     STATE_FILE.write_text(json.dumps(state))
 
-def send_single_alert(bot_token, chat_id, message):
+def send_alert(bot_token, chat_id, message):
+    """
+    Envoi simple Telegram (son activé par défaut)
+    """
     requests.post(
         f"https://api.telegram.org/bot{bot_token}/sendMessage",
         data={
@@ -50,7 +53,7 @@ def send_combo_alert(bot_token, chat_id, combo):
         "⚠️ *Matchs différents — edge réel détecté*"
     )
 
-    send_single_alert(bot_token, chat_id, msg)
+    send_alert(bot_token, chat_id, msg)
 
     state[key] = True
     _save_state(state)
