@@ -1,12 +1,10 @@
 import streamlit as st
 import pandas as pd
-import requests
 from scipy.stats import norm
-from datetime import datetime
-from pathlib import Path
 
 from analysis.b2b import is_back_to_back
 from analysis.odds import fetch_winamax_pra
+from analysis.alerts import send_alert
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Dashboard Paris NBA — PRA", layout="wide")
@@ -14,16 +12,6 @@ st.set_page_config(page_title="Dashboard Paris NBA — PRA", layout="wide")
 BOT_TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
 ODDS_KEY = st.secrets.get("THEODDS_API_KEY")
-
-def send_alert(msg):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=5
-        )
-    except:
-        pass
 
 # ================= DATA =================
 @st.cache_data(ttl=3600)
@@ -82,11 +70,11 @@ else:
     decision = "NO BET"
 
 # ================= DISPLAY =================
-st.divider()
 st.subheader("Décision du modèle")
 
 if decision == "OVER A":
     st.success("🟢 OVER PRA — CONFIANCE A")
+    send_alert(BOT_TOKEN, CHAT_ID, player, line_book, prob, odds_book)
 elif decision == "OVER B":
     st.warning("🟡 OVER PRA — CONFIANCE B")
 else:
