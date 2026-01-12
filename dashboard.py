@@ -8,9 +8,7 @@ from pathlib import Path
 from analysis.b2b import is_back_to_back
 from analysis.odds import fetch_winamax_pra
 
-# ======================================================
-# CONFIG
-# ======================================================
+# ================= CONFIG =================
 st.set_page_config(page_title="Dashboard Paris NBA — PRA", layout="wide")
 
 BOT_TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
@@ -27,9 +25,7 @@ def send_alert(msg):
     except:
         pass
 
-# ======================================================
-# LOAD DATA
-# ======================================================
+# ================= DATA =================
 @st.cache_data(ttl=3600)
 def load_all():
     games = pd.read_parquet("data_export/games.parquet")
@@ -48,25 +44,10 @@ def load_winamax():
 
 winamax = load_winamax()
 
-# ======================================================
-# LOG
-# ======================================================
-LOG = Path("data/decisions.csv")
-LOG.parent.mkdir(exist_ok=True)
-
-if not LOG.exists():
-    pd.DataFrame(columns=[
-        "date","player","line","odds","stake",
-        "prob","decision","result","profit"
-    ]).to_csv(LOG, index=False)
-
-# ======================================================
-# UI
-# ======================================================
-st.title("🏀 Dashboard Paris NBA — PRA + Winamax")
+# ================= UI =================
+st.title("🏀 Dashboard Paris NBA — PRA")
 
 player = st.selectbox("Joueur", sorted(agg["PLAYER_NAME"].unique()))
-p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
 latest = p_games.sort_values("GAME_DATE").iloc[-1]
@@ -75,87 +56,43 @@ home = "vs" in latest["MATCHUP"]
 b2b = is_back_to_back(team_abbr)
 
 row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] == "PRA")].iloc[0]
-line_model = float(round(row["MEAN"], 1))
+line_model = round(row["MEAN"], 1)
 std = row["STD"] if row["STD"] > 0 else 1
 
-# ======================================================
-# WINAMAX SAFE (ZÉRO CRASH)
-# ======================================================
+# Winamax SAFE
 line_book = line_model
 odds_book = 1.90
-
 if not winamax.empty and "PLAYER_NAME" in winamax.columns:
     wm = winamax[winamax["PLAYER_NAME"].str.lower() == player.lower()]
     if not wm.empty:
         wm = wm.iloc[0]
-        line_book = wm.get("LINE", line_model)
-        odds_book = wm.get("ODDS", odds_book)
+        line_book = wm["LINE"]
+        odds_book = wm["ODDS"]
 
-# ======================================================
-# MODEL
-# ======================================================
+# ================= MODEL =================
 prob = 1 - norm.cdf(line_book, line_model, std)
 value = abs(prob - 0.5)
 p90 = p_games["PRA"].quantile(0.9)
 
-decision = (
-    "OVER"
-    if prob >= 0.57 and value >= 0.12 and p90 <= line_book + 8
-    else "NO BET"
-)
+if prob >= 0.62 and value >= 0.15 and p90 <= line_book + 6:
+    decision = "OVER A"
+elif prob >= 0.58 and value >= 0.12:
+    decision = "OVER B"
+else:
+    decision = "NO BET"
 
-# ======================================================
-# AFFICHAGE
-# ======================================================
+# ================= DISPLAY =================
 st.divider()
 st.subheader("Décision du modèle")
 
-if decision == "OVER":
-    st.success("✅ OVER PRA AUTORISÉ")
+if decision == "OVER A":
+    st.success("🟢 OVER PRA — CONFIANCE A")
+elif decision == "OVER B":
+    st.warning("🟡 OVER PRA — CONFIANCE B")
 else:
-    st.warning("❌ NO BET")
+    st.error("❌ NO BET")
 
-st.write(f"📊 PRA modèle : {line_model}")
-st.write(f"📈 Ligne Winamax : {line_book} @ {odds_book}")
-st.write(f"🎯 Probabilité Over : {round(prob*100,1)} %")
-st.write(f"🏠 Domicile : {'Oui' if home else 'Non'} | 🔁 B2B : {'Oui' if b2b else 'Non'}")
-
-# ======================================================
-# ENREGISTRER PARI
-# ======================================================
-stake = st.number_input("Mise (€)", value=10.0)
-
-if st.button("Enregistrer le pari"):
-    df = pd.read_csv(LOG)
-    df.loc[len(df)] = [
-        datetime.utcnow().strftime("%Y-%m-%d"),
-        player, line_book, odds_book,
-        stake, round(prob,4),
-        decision, "PENDING", 0
-    ]
-    df.to_csv(LOG, index=False)
-
-    if decision == "OVER":
-        send_alert(f"OVER PRA\n{player}\nLigne {line_book} @ {odds_book}")
-
-    st.success("Pari enregistré")
-
-# ======================================================
-# CLASSEMENT ROI
-# ======================================================
-st.divider()
-st.subheader("Classement joueurs rentables (ROI réel)")
-
-df = pd.read_csv(LOG)
-done = df[df["result"].isin(["WIN","LOSS"])]
-
-if len(done) >= 3:
-    rank = done.groupby("player").agg(
-        PARIS=("profit","count"),
-        PROFIT=("profit","sum"),
-        MISE=("stake","sum")
-    ).reset_index()
-    rank["ROI_%"] = (rank["PROFIT"]/rank["MISE"]) * 100
-    st.dataframe(rank.sort_values("ROI_%", ascending=False), use_container_width=True)
-else:
-    st.info("Pas encore assez de paris validés")
+st.write(f"PRA modèle : {line_model}")
+st.write(f"Ligne Winamax : {line_book} @ {odds_book}")
+st.write(f"Probabilité Over : {round(prob*100,1)} %")
+st.write(f"Domicile : {'Oui' if home else 'Non'} | B2B : {'Oui' if b2b else 'Non'}")
