@@ -5,12 +5,12 @@ from pathlib import Path
 
 STATE_FILE = Path("data_export/alerts_sent.json")
 
-def load_state():
+def _load_state():
     if STATE_FILE.exists():
         return json.loads(STATE_FILE.read_text())
     return {}
 
-def save_state(state):
+def _save_state(state):
     STATE_FILE.parent.mkdir(exist_ok=True)
     STATE_FILE.write_text(json.dumps(state))
 
@@ -26,18 +26,20 @@ def send_alert(
     odds,
     prob
 ):
-    state = load_state()
+    state = _load_state()
     today = str(date.today())
     key = f"{today}_{player}"
 
+    # Anti-spam : 1 alerte / joueur / jour
     if state.get(key):
         return False
 
-    msg = (
+    message = (
         "🚨🔥 *OVER PRA DÉTECTÉ* 🔥🚨\n\n"
         f"👤 *Joueur* : {player}\n"
         f"🏀 *Match* : {matchup}\n"
-        f"🏠 *Domicile* : {'Oui' if home else 'Non'} | 🔁 *B2B* : {'Oui' if b2b else 'Non'}\n\n"
+        f"🏠 *Domicile* : {'Oui' if home else 'Non'} | "
+        f"🔁 *B2B* : {'Oui' if b2b else 'Non'}\n\n"
         f"📊 *PRA Modèle* : {model_line}\n"
         f"🎯 *Ligne Book* : {book_line} @ {odds}\n\n"
         f"📈 *Probabilité Over* : {round(prob*100,1)} %\n"
@@ -49,12 +51,12 @@ def send_alert(
         f"https://api.telegram.org/bot{bot_token}/sendMessage",
         data={
             "chat_id": chat_id,
-            "text": msg,
+            "text": message,
             "parse_mode": "Markdown"
         },
         timeout=5
     )
 
     state[key] = True
-    save_state(state)
+    _save_state(state)
     return True
