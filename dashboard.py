@@ -11,7 +11,7 @@ from analysis.odds import fetch_winamax_pra
 # ======================================================
 # CONFIG
 # ======================================================
-st.set_page_config(page_title="Dashboard Paris NBA", layout="wide")
+st.set_page_config(page_title="Dashboard Paris NBA — PRA", layout="wide")
 
 BOT_TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
@@ -34,11 +34,10 @@ def send_alert(msg):
 def load_all():
     games = pd.read_parquet("data_export/games.parquet")
     agg = pd.read_parquet("data_export/agg.parquet")
-    defense = pd.read_parquet("data_export/defense.parquet")
     props = pd.read_parquet("data_export/props.parquet")
-    return games, agg, defense, props
+    return games, agg, props
 
-games, agg, defense, props = load_all()
+games, agg, props = load_all()
 games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
 
 @st.cache_data(ttl=300)
@@ -48,14 +47,13 @@ def load_winamax():
     return fetch_winamax_pra(ODDS_KEY)
 
 winamax = load_winamax()
-st.write("DEBUG winamax columns:", list(winamax.columns))
-st.write("DEBUG winamax preview:", winamax.head())
 
 # ======================================================
 # LOG
 # ======================================================
 LOG = Path("data/decisions.csv")
 LOG.parent.mkdir(exist_ok=True)
+
 if not LOG.exists():
     pd.DataFrame(columns=[
         "date","player","line","odds","stake",
@@ -80,24 +78,34 @@ row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] == "PRA")].iloc[0]
 line_model = float(round(row["MEAN"], 1))
 std = row["STD"] if row["STD"] > 0 else 1
 
-# Winamax
-wm = winamax[winamax["PLAYER_NAME"].str.lower() == player.lower()]
-if not wm.empty:
-    wm = wm.iloc[0]
-    line_book = wm["LINE"]
-    odds_book = wm["ODDS"]
-else:
-    line_book = line_model
-    odds_book = 1.90
+# ======================================================
+# WINAMAX SAFE (ZÉRO CRASH)
+# ======================================================
+line_book = line_model
+odds_book = 1.90
 
+if not winamax.empty and "PLAYER_NAME" in winamax.columns:
+    wm = winamax[winamax["PLAYER_NAME"].str.lower() == player.lower()]
+    if not wm.empty:
+        wm = wm.iloc[0]
+        line_book = wm.get("LINE", line_model)
+        odds_book = wm.get("ODDS", odds_book)
+
+# ======================================================
+# MODEL
+# ======================================================
 prob = 1 - norm.cdf(line_book, line_model, std)
 value = abs(prob - 0.5)
 p90 = p_games["PRA"].quantile(0.9)
 
-decision = "OVER" if prob >= 0.57 and value >= 0.12 and p90 <= line_book + 8 else "NO BET"
+decision = (
+    "OVER"
+    if prob >= 0.57 and value >= 0.12 and p90 <= line_book + 8
+    else "NO BET"
+)
 
 # ======================================================
-# DECISION
+# AFFICHAGE
 # ======================================================
 st.divider()
 st.subheader("Décision du modèle")
@@ -107,13 +115,13 @@ if decision == "OVER":
 else:
     st.warning("❌ NO BET")
 
-st.write(f"📊 PRA moyen modèle : {line_model}")
-st.write(f"📈 Ligne Winamax : {line_book} | Cote : {odds_book}")
+st.write(f"📊 PRA modèle : {line_model}")
+st.write(f"📈 Ligne Winamax : {line_book} @ {odds_book}")
 st.write(f"🎯 Probabilité Over : {round(prob*100,1)} %")
 st.write(f"🏠 Domicile : {'Oui' if home else 'Non'} | 🔁 B2B : {'Oui' if b2b else 'Non'}")
 
 # ======================================================
-# ENREGISTRER
+# ENREGISTRER PARI
 # ======================================================
 stake = st.number_input("Mise (€)", value=10.0)
 
@@ -133,7 +141,7 @@ if st.button("Enregistrer le pari"):
     st.success("Pari enregistré")
 
 # ======================================================
-# ROI / CLASSEMENT
+# CLASSEMENT ROI
 # ======================================================
 st.divider()
 st.subheader("Classement joueurs rentables (ROI réel)")
@@ -147,8 +155,7 @@ if len(done) >= 3:
         PROFIT=("profit","sum"),
         MISE=("stake","sum")
     ).reset_index()
-    rank["ROI_%"] = (rank["PROFIT"]/rank["MISE"])*100
-    rank = rank.sort_values("ROI_%", ascending=False)
-    st.dataframe(rank, use_container_width=True)
+    rank["ROI_%"] = (rank["PROFIT"]/rank["MISE"]) * 100
+    st.dataframe(rank.sort_values("ROI_%", ascending=False), use_container_width=True)
 else:
     st.info("Pas encore assez de paris validés")
