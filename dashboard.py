@@ -8,15 +8,23 @@ from pathlib import Path
 from analysis.b2b import is_back_to_back
 
 # ======================================================
-# TELEGRAM
+# CONFIG STREAMLIT
+# ======================================================
+st.set_page_config(page_title="Dashboard Paris NBA", layout="wide")
+
+# ======================================================
+# TELEGRAM (SECRETS STREAMLIT)
 # ======================================================
 BOT_TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
 
-def send_alert(message):
+def send_alert(message: str):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message}
-    requests.post(url, data=payload, timeout=5)
+    try:
+        requests.post(url, data=payload, timeout=5)
+    except:
+        pass
 
 # ======================================================
 # NBA TEAM MAP
@@ -37,7 +45,21 @@ TEAM_MAP = {
 }
 
 # ======================================================
-# DECISION LOG
+# DATA LOADER
+# ======================================================
+@st.cache_data(ttl=3600)
+def load_all():
+    games = pd.read_parquet("data_export/games.parquet")
+    agg = pd.read_parquet("data_export/agg.parquet")
+    defense = pd.read_parquet("data_export/defense.parquet")
+    props = pd.read_parquet("data_export/props.parquet")
+    return games, agg, defense, props
+
+games, agg, defense, props = load_all()
+games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
+
+# ======================================================
+# DECISION LOG (ROI)
 # ======================================================
 LOG_PATH = Path("data/decisions.csv")
 LOG_PATH.parent.mkdir(exist_ok=True)
@@ -48,40 +70,23 @@ if not LOG_PATH.exists():
         "prob_over","decision","result","profit"
     ]).to_csv(LOG_PATH, index=False)
 
-def log_decision(row):
+def save_log(row):
     df = pd.read_csv(LOG_PATH)
     df.loc[len(df)] = row
     df.to_csv(LOG_PATH, index=False)
 
 # ======================================================
-# CONFIG
-# ======================================================
-st.set_page_config(page_title="Dashboard Paris NBA", layout="wide")
-
-@st.cache_data(ttl=3600)
-def load_all():
-    return (
-        pd.read_parquet("data_export/games.parquet"),
-        pd.read_parquet("data_export/agg.parquet"),
-        pd.read_parquet("data_export/defense.parquet"),
-        pd.read_parquet("data_export/props.parquet"),
-    )
-
-games, agg, defense, props = load_all()
-games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
-
-# ======================================================
 # UI — ANALYSE
 # ======================================================
-st.title("Dashboard Paris NBA — PRO MODE")
+st.title("Dashboard Paris NBA — PRO")
 
-player = st.selectbox("Joueur", sorted(agg["PLAYER_NAME"].unique()))
+player = st.selectbox("Choisir un joueur", sorted(agg["PLAYER_NAME"].unique()))
 p_row = agg[agg["PLAYER_NAME"] == player].iloc[0]
 p_games = games[games["PLAYER_NAME"] == player]
 
 latest = p_games.sort_values("GAME_DATE").iloc[-1]
 team_abbr = latest["MATCHUP"].split(" ")[0]
-team = TEAM_MAP.get(team_abbr, team_abbr)
+team_full = TEAM_MAP.get(team_abbr, team_abbr)
 
 home = "vs" in latest["MATCHUP"]
 b2b = is_back_to_back(team_abbr)
@@ -97,50 +102,66 @@ prob_over = 1 - norm.cdf(line, mean, std)
 value = abs(prob_over - 0.5)
 p90 = p_games["PRA"].quantile(0.9)
 
-decision = "OVER" if prob_over>=0.57 and value>=0.12 and p90<=line+8 else "NO BET"
+decision = "OVER" if prob_over >= 0.57 and value >= 0.12 and p90 <= line + 8 else "NO BET"
 
-st.subheader("Décision")
-st.success("OVER PRA") if decision=="OVER" else st.error("NO BET")
+# ======================================================
+# DECISION (AFFICHAGE PROPRE)
+# ======================================================
+st.divider()
+st.subheader("Décision du modèle")
 
+if decision == "OVER":
+    st.success(f"✅ PARI AUTORISÉ — OVER PRA ({team_full})")
+else:
+    st.warning("❌ NO BET — Aucune value détectée")
+
+st.write(f"Probabilité Over : {round(prob_over*100,1)} %")
+st.write(f"Domicile : {'Oui' if home else 'Non'} | Back-to-back : {'Oui' if b2b else 'Non'}")
+
+# ======================================================
+# ENREGISTRER PARI
+# ======================================================
 stake = st.number_input("Mise (€)", value=10.0)
 
 if st.button("Enregistrer le pari"):
-    log_decision([
+    save_log([
         datetime.utcnow().strftime("%Y-%m-%d"),
-        player, team, line, odds, stake,
+        player, team_full, line, odds, stake,
         round(prob_over,4), decision, "PENDING", 0
     ])
+    if decision == "OVER":
+        send_alert(f"OVER PRA\n{player}\n{team_full}\nLigne {line}")
     st.success("Pari enregistré")
 
 # ======================================================
-# UI — RESULTATS
+# SAISIE RESULTATS
 # ======================================================
 st.divider()
 st.subheader("Saisie des résultats")
 
 df = pd.read_csv(LOG_PATH)
-pending = df[df["result"]=="PENDING"]
+pending = df[df["result"] == "PENDING"]
 
 for i, r in pending.iterrows():
-    col1, col2, col3 = st.columns(3)
-    col1.write(f"{r['player']} ({r['line']})")
-    res = col2.selectbox("Résultat", ["WIN","LOSS"], key=i)
-    if col3.button("Valider", key=f"v{i}"):
+    c1, c2, c3 = st.columns(3)
+    c1.write(f"{r['player']} — PRA {r['line']}")
+    res = c2.selectbox("Résultat", ["WIN","LOSS"], key=f"res{i}")
+    if c3.button("Valider", key=f"val{i}"):
         profit = r["stake"]*(r["odds"]-1) if res=="WIN" else -r["stake"]
-        df.loc[i, "result"] = res
-        df.loc[i, "profit"] = round(profit,2)
+        df.loc[i,"result"] = res
+        df.loc[i,"profit"] = round(profit,2)
         df.to_csv(LOG_PATH, index=False)
         st.experimental_rerun()
 
 # ======================================================
-# UI — CLASSEMENT ROI
+# CLASSEMENT ROI
 # ======================================================
 st.divider()
 st.subheader("Classement des joueurs les plus rentables (ROI réel)")
 
 done = df[df["result"].isin(["WIN","LOSS"])]
 
-if len(done) >= 5:
+if len(done) >= 3:
     ranking = (
         done.groupby("player")
         .agg(
@@ -152,12 +173,6 @@ if len(done) >= 5:
     )
     ranking["ROI_%"] = (ranking["PROFIT"]/ranking["MISE"])*100
     ranking = ranking.sort_values("ROI_%", ascending=False)
-
     st.dataframe(ranking, use_container_width=True)
-
-    st.divider()
-    st.subheader("Top joueurs uniquement")
-    top_players = ranking[ranking["ROI_%"]>5]["player"].tolist()
-    st.write(top_players)
 else:
     st.info("Pas encore assez de paris terminés")
