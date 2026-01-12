@@ -11,21 +11,29 @@ DATA_STATE.parent.mkdir(exist_ok=True)
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+BANKROLL = 100  # bankroll de référence (€)
+
 # ================= FONCTIONS =================
 def apply_context_penalty(prob, home, b2b):
     penalty = 0.0
     if not home:
-        penalty += 0.03   # Away
+        penalty += 0.03
     if b2b:
-        penalty += 0.04   # Back-to-back
+        penalty += 0.04
     return max(prob - penalty, 0)
 
-def kelly_light(prob, odds, bankroll=100):
+def kelly_light(prob, odds, bankroll):
+    if prob <= 0 or odds <= 1:
+        return 0.0
+
     edge = prob * (odds - 1) - (1 - prob)
     if edge <= 0:
-        return 0
-    kelly = edge / (odds - 1)
-    return round(bankroll * kelly * 0.25, 2)
+        return 0.0
+
+    kelly_full = edge / (odds - 1)
+    stake = bankroll * kelly_full * 0.25
+
+    return round(max(stake, 0), 2)
 
 # ================= CHARGEMENT DONNÉES =================
 games = pd.read_csv("data/players_7_games.csv")
@@ -41,7 +49,7 @@ else:
     state = pd.DataFrame(columns=["PLAYER_NAME", "LINE"])
 
 # ================= SIMULATION WINAMAX =================
-# (sera remplacé plus tard par un vrai fetch)
+# (remplacé plus tard par un vrai fetch Winamax)
 winamax = props.copy()
 
 for _, row in winamax.iterrows():
@@ -49,11 +57,9 @@ for _, row in winamax.iterrows():
     ligne = row["MEAN"]
     cote = row.get("ODDS", None)
 
-    # Ligne ou cote non publiée
     if cote is None or pd.isna(cote):
         continue
 
-    # Déjà alerté pour cette ligne
     old = state[state["PLAYER_NAME"] == player]
     if not old.empty and old.iloc[0]["LINE"] == ligne:
         continue
@@ -62,14 +68,12 @@ for _, row in winamax.iterrows():
     if len(p_games) < 5:
         continue
 
-    # ================= CONTEXTE MATCH =================
     last_game = p_games.sort_values("GAME_DATE").iloc[-1]
     matchup = last_game["MATCHUP"]
 
     home = "vs" in matchup
-    b2b = False  # à brancher plus tard automatiquement
+    b2b = False  # branchable automatiquement plus tard
 
-    # ================= PRA MODÈLE =================
     pra = p_games.sort_values("GAME_DATE").tail(7)["PRA"].mean()
     std = p_games["PRA"].std()
     if pd.isna(std) or std < 1:
@@ -79,11 +83,9 @@ for _, row in winamax.iterrows():
     prob = apply_context_penalty(prob_raw, home, b2b)
 
     proba_cote = 1 / cote
+    stake = kelly_light(prob, cote, BANKROLL)
 
-    # ================= DÉCISION =================
-    if prob >= 0.62 and prob > proba_cote + 0.05:
-        mise = kelly_light(prob, cote, bankroll=100)
-
+    if stake > 0 and prob >= 0.62 and prob > proba_cote + 0.05:
         send_alert(
             BOT_TOKEN,
             CHAT_ID,
@@ -94,10 +96,10 @@ for _, row in winamax.iterrows():
             model_line=round(pra, 1),
             book_line=ligne,
             odds=cote,
-            prob=prob
+            prob=prob,
+            stake=stake
         )
 
-    # ================= MÉMORISATION =================
     state = pd.concat([
         state,
         pd.DataFrame([{
