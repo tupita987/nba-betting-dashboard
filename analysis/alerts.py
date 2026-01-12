@@ -14,10 +14,39 @@ def _save_state(state):
     STATE_FILE.parent.mkdir(exist_ok=True)
     STATE_FILE.write_text(json.dumps(state))
 
-def send_alert(bot_token, chat_id, message):
-    """
-    Envoi simple Telegram (son activé par défaut)
-    """
+def send_alert(
+    bot_token,
+    chat_id,
+    player,
+    matchup,
+    home,
+    b2b,
+    model_line,
+    book_line,
+    odds,
+    prob
+):
+    state = _load_state()
+    today = str(date.today())
+    key = f"{today}_{player}"
+
+    # Anti-spam : 1 alerte / joueur / jour
+    if state.get(key):
+        return False
+
+    message = (
+        "🚨🔥 *OVER PRA DÉTECTÉ* 🔥🚨\n\n"
+        f"👤 *Joueur* : {player}\n"
+        f"🏀 *Match* : {matchup}\n"
+        f"🏠 *Domicile* : {'Oui' if home else 'Non'} | "
+        f"🔁 *B2B* : {'Oui' if b2b else 'Non'}\n\n"
+        f"📊 *PRA Modèle* : {model_line}\n"
+        f"🎯 *Ligne Book* : {book_line} @ {odds}\n\n"
+        f"📈 *Probabilité Over* : {round(prob*100,1)} %\n"
+        f"💎 *Confiance* : A\n\n"
+        "⚠️ *Value détectée — opportunité rare*"
+    )
+
     requests.post(
         f"https://api.telegram.org/bot{bot_token}/sendMessage",
         data={
@@ -27,33 +56,6 @@ def send_alert(bot_token, chat_id, message):
         },
         timeout=5
     )
-
-def send_combo_alert(bot_token, chat_id, combo):
-    """
-    Envoie UN combiné intelligent par jour (anti-spam)
-    """
-    state = _load_state()
-    today = str(date.today())
-    key = f"{today}_COMBO"
-
-    if state.get(key):
-        return False
-
-    msg = (
-        "🚨🔥 *COMBINÉ INTELLIGENT NBA* 🔥🚨\n\n"
-        "🧠 *OVER A uniquement — ultra filtré*\n\n"
-    )
-
-    for i, p in enumerate(combo["players"], start=1):
-        msg += f"{i}️⃣ *{p}* — OVER PRA\n"
-
-    msg += (
-        f"\n📈 *Probabilité combinée* : {round(combo['prob']*100,1)} %\n"
-        f"💰 *Cote combinée* : {combo['odds']}\n\n"
-        "⚠️ *Matchs différents — edge réel détecté*"
-    )
-
-    send_alert(bot_token, chat_id, msg)
 
     state[key] = True
     _save_state(state)
