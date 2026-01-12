@@ -146,3 +146,34 @@ st.subheader("Historique des décisions")
 
 history = pd.read_csv(LOG_PATH)
 st.dataframe(history.tail(50), use_container_width=True)
+# ======================================================
+# CLASSEMENT DES JOUEURS (EDGE THEORIQUE)
+# ======================================================
+st.divider()
+st.subheader("Classement des joueurs les plus rentables (théorique)")
+
+history = pd.read_csv(LOG_PATH)
+
+# On ne garde que les OVER
+over_only = history[history["decision"] == "OVER"].copy()
+
+if len(over_only) < 5:
+    st.info("Pas encore assez de données pour établir un classement.")
+else:
+    ranking = (
+        over_only
+        .groupby("player")
+        .agg(
+            NB_OVER=("decision", "count"),
+            PROBA_MOY=("prob_over", "mean"),
+        )
+        .reset_index()
+    )
+
+    ranking["EDGE_MOY"] = ranking["PROBA_MOY"] - 0.5
+    ranking = ranking.sort_values("EDGE_MOY", ascending=False)
+
+    st.dataframe(
+        ranking,
+        use_container_width=True
+    )
