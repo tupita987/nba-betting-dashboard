@@ -4,11 +4,16 @@ from scipy.stats import norm
 
 from analysis.b2b import is_back_to_back
 from analysis.odds import fetch_winamax_pra
-from analysis.alerts import send_alert, send_combo_alert
-from analysis.combine import build_best_combo
+from analysis.alerts import send_alert
+from analysis.explain import explain
+from analysis.roi import load_roi
 
 # ================= CONFIG =================
-st.set_page_config(page_title="Dashboard Paris NBA — PRA", layout="wide")
+st.set_page_config(
+    page_title="Dashboard Paris NBA — PRA",
+    page_icon="🏀",
+    layout="wide"
+)
 
 BOT_TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
@@ -25,41 +30,84 @@ def load_all():
 games, agg, props = load_all()
 games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
 
+@st.cache_data(ttl=300)
+def load_winamax():
+    if not ODDS_KEY:
+        return pd.DataFrame()
+    return fetch_winamax_pra(ODDS_KEY)
+
+winamax = load_winamax()
+
 # ================= UI =================
 st.title("🏀 Dashboard Paris NBA — PRA")
 
-# ----------- COMBINÉ INTELLIGENT -----------
-st.subheader("🧠 Combiné intelligent du jour")
+player = st.selectbox("👤 Joueur", sorted(agg["PLAYER_NAME"].unique()))
+p_games = games[games["PLAYER_NAME"] == player]
 
-over_list = []
+latest = p_games.sort_values("GAME_DATE").iloc[-1]
+matchup = latest["MATCHUP"]
+team_abbr = matchup.split(" ")[0]
+home = "vs" in matchup
+b2b = is_back_to_back(team_abbr)
 
-for _, r in props.iterrows():
-    pg = games[games["PLAYER_NAME"] == r["PLAYER_NAME"]]
-    if pg.empty:
-        continue
+row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] == "PRA")].iloc[0]
+model_line = round(row["MEAN"], 1)
+std = row["STD"] if row["STD"] > 0 else 1
 
-    last = pg.sort_values("GAME_DATE").iloc[-1]
-    line = round(r["MEAN"], 1)
-    std = r["STD"] if r["STD"] > 0 else 1
-    prob_i = 1 - norm.cdf(line, r["MEAN"], std)
-    value_i = abs(prob_i - 0.5)
-    p90_i = pg["PRA"].quantile(0.9)
+# --- Winamax SAFE ---
+book_line = model_line
+odds = 1.90
+if not winamax.empty and "PLAYER_NAME" in winamax.columns:
+    wm = winamax[winamax["PLAYER_NAME"].str.lower() == player.lower()]
+    if not wm.empty:
+        wm = wm.iloc[0]
+        book_line = wm["LINE"]
+        odds = wm["ODDS"]
 
-    if prob_i >= 0.62 and value_i >= 0.15 and p90_i <= line + 6:
-        over_list.append({
-            "PLAYER_NAME": r["PLAYER_NAME"],
-            "MATCHUP": last["MATCHUP"],
-            "PROB": prob_i,
-            "ODDS": 1.90
-        })
+# ================= MODEL =================
+prob = 1 - norm.cdf(book_line, model_line, std)
+value = abs(prob - 0.5)
+p90 = p_games["PRA"].quantile(0.9)
 
-over_df = pd.DataFrame(over_list)
-combo = build_best_combo(over_df)
-
-if combo:
-    st.success("🔥 Combiné intelligent détecté")
-    st.write(combo)
-
-    send_combo_alert(BOT_TOKEN, CHAT_ID, combo)
+if prob >= 0.62 and value >= 0.15 and p90 <= book_line + 6:
+    decision = "OVER A"
+elif prob >= 0.58 and value >= 0.12:
+    decision = "OVER B"
 else:
-    st.info("Aucun combiné intelligent aujourd’hui")
+    decision = "NO BET"
+
+# ================= DISPLAY =================
+st.divider()
+st.subheader("📌 Décision du modèle")
+
+if decision == "OVER A":
+    st.success("🟢 OVER PRA — CONFIANCE A")
+    send_alert(
+        BOT_TOKEN, CHAT_ID,
+        player, matchup, home, b2b,
+        model_line, book_line, odds, prob
+    )
+elif decision == "OVER B":
+    st.warning("🟡 OVER PRA — CONFIANCE B")
+else:
+    st.error("❌ NO BET")
+
+# --- KPIs ---
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("📊 PRA modèle", model_line)
+c2.metric("🎯 Ligne Book", f"{book_line} @ {odds}")
+c3.metric("📈 Proba Over", f"{round(prob*100,1)} %")
+c4.metric("🏠 / 🔁", f"{'Home' if home else 'Away'} | {'B2B' if b2b else 'Rest'}")
+
+# --- Explanation ---
+st.info(explain(decision, prob, value, p90, book_line))
+
+# --- ROI ---
+st.divider()
+st.subheader("🏆 Classement joueurs rentables (ROI réel)")
+
+roi = load_roi()
+if roi.empty:
+    st.info("Pas encore assez de paris validés")
+else:
+    st.dataframe(roi.head(10), use_container_width=True)
