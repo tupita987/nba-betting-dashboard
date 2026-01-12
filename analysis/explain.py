@@ -1,14 +1,19 @@
-def explain(decision, prob, value, p90, line):
-    reasons = []
+def expliquer_decision(decision, prob, pra_modele, ligne):
+    raisons = []
 
-    if prob < 0.58:
-        reasons.append("Probabilité trop faible")
-    if value < 0.12:
-        reasons.append("Pas assez de value")
-    if p90 > line + 6:
-        reasons.append("Distribution trop large")
+    if abs(pra_modele - ligne) < 1:
+        raisons.append("PRA modèle trop proche de la ligne")
 
-    if decision != "NO BET":
-        return "Critères validés"
+    if prob < 0.55:
+        raisons.append("Probabilité insuffisante")
 
-    return " | ".join(reasons)
+    if decision == "NO BET":
+        return " | ".join(raisons) if raisons else "Aucune value détectée"
+
+    if decision == "OVER":
+        return "Avantage statistique clair sur la ligne"
+
+    if decision == "UNDER":
+        return "Sous-performance attendue"
+
+    return ""
