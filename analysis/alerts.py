@@ -1,6 +1,6 @@
 import json
-from datetime import date
 import requests
+from datetime import date
 from pathlib import Path
 
 STATE_FILE = Path("data_export/alerts_sent.json")
@@ -14,25 +14,44 @@ def save_state(state):
     STATE_FILE.parent.mkdir(exist_ok=True)
     STATE_FILE.write_text(json.dumps(state))
 
-def send_alert(bot_token, chat_id, player, line, prob, odds):
+def send_alert(
+    bot_token,
+    chat_id,
+    player,
+    matchup,
+    home,
+    b2b,
+    model_line,
+    book_line,
+    odds,
+    prob
+):
     state = load_state()
     today = str(date.today())
-
     key = f"{today}_{player}"
+
     if state.get(key):
-        return False  # déjà envoyé
+        return False
 
     msg = (
-        f"🟢 OVER PRA — CONFIANCE A\n\n"
-        f"Joueur : {player}\n"
-        f"Ligne : {line}\n"
-        f"Cote : {odds}\n"
-        f"Probabilité : {round(prob*100,1)} %"
+        "🚨🔥 *OVER PRA DÉTECTÉ* 🔥🚨\n\n"
+        f"👤 *Joueur* : {player}\n"
+        f"🏀 *Match* : {matchup}\n"
+        f"🏠 *Domicile* : {'Oui' if home else 'Non'} | 🔁 *B2B* : {'Oui' if b2b else 'Non'}\n\n"
+        f"📊 *PRA Modèle* : {model_line}\n"
+        f"🎯 *Ligne Book* : {book_line} @ {odds}\n\n"
+        f"📈 *Probabilité Over* : {round(prob*100,1)} %\n"
+        f"💎 *Confiance* : A\n\n"
+        "⚠️ *Value détectée — opportunité rare*"
     )
 
     requests.post(
         f"https://api.telegram.org/bot{bot_token}/sendMessage",
-        data={"chat_id": chat_id, "text": msg},
+        data={
+            "chat_id": chat_id,
+            "text": msg,
+            "parse_mode": "Markdown"
+        },
         timeout=5
     )
 
