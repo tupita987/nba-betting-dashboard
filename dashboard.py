@@ -5,8 +5,6 @@ from scipy.stats import norm
 from analysis.b2b import is_back_to_back
 from analysis.odds import fetch_winamax_pra
 from analysis.alerts import send_alert, send_combo_alert
-from analysis.explain import explain
-from analysis.roi import load_roi
 from analysis.combine import build_best_combo
 
 # ================= CONFIG =================
@@ -27,42 +25,10 @@ def load_all():
 games, agg, props = load_all()
 games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
 
-@st.cache_data(ttl=300)
-def load_winamax():
-    if not ODDS_KEY:
-        return pd.DataFrame()
-    return fetch_winamax_pra(ODDS_KEY)
-
-winamax = load_winamax()
-
 # ================= UI =================
 st.title("🏀 Dashboard Paris NBA — PRA")
 
-# ----------- ANALYSE JOUEUR -----------
-player = st.selectbox("👤 Joueur", sorted(agg["PLAYER_NAME"].unique()))
-p_games = games[games["PLAYER_NAME"] == player]
-
-latest = p_games.sort_values("GAME_DATE").iloc[-1]
-matchup = latest["MATCHUP"]
-
-row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] == "PRA")].iloc[0]
-model_line = round(row["MEAN"], 1)
-std = row["STD"] if row["STD"] > 0 else 1
-
-book_line = model_line
-odds = 1.90
-
-prob = 1 - norm.cdf(book_line, model_line, std)
-value = abs(prob - 0.5)
-p90 = p_games["PRA"].quantile(0.9)
-
-decision = "OVER A" if prob >= 0.62 and value >= 0.15 and p90 <= book_line + 6 else "NO BET"
-
-st.subheader("📌 Décision")
-st.success("🟢 OVER PRA — A") if decision == "OVER A" else st.error("❌ NO BET")
-
-# ----------- COMBINÉ -----------
-st.divider()
+# ----------- COMBINÉ INTELLIGENT -----------
 st.subheader("🧠 Combiné intelligent du jour")
 
 over_list = []
