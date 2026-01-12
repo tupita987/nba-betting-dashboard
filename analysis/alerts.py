@@ -25,18 +25,20 @@ def send_alert(
     book_line,
     odds,
     prob,
-    stake
+    stake,
+    combo=False
 ):
     state = _load_state()
     today = str(date.today())
     key = f"{today}_{player}"
 
-    # Anti-spam : 1 alerte / joueur / jour
     if state.get(key):
         return False
 
+    header = "🚨🔥 *COMBINÉ INTELLIGENT PRA* 🔥🚨\n\n" if combo else "🚨🔥 *OVER PRA DÉTECTÉ* 🔥🚨\n\n"
+
     message = (
-        "🚨🔥 *OVER PRA DÉTECTÉ* 🔥🚨\n\n"
+        header +
         f"👤 *Joueur* : {player}\n"
         f"🏀 *Match* : {matchup}\n"
         f"🏠 *Domicile* : {'Oui' if home else 'Non'} | "
