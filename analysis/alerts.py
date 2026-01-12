@@ -1,19 +1,3 @@
-import json
-import requests
-from datetime import date
-from pathlib import Path
-
-STATE_FILE = Path("data_export/alerts_sent.json")
-
-def _load_state():
-    if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text())
-    return {}
-
-def _save_state(state):
-    STATE_FILE.parent.mkdir(exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state))
-
 def send_alert(
     bot_token,
     chat_id,
@@ -47,7 +31,7 @@ def send_alert(
         "⚠️ *Value détectée — opportunité rare*"
     )
 
-        try:
+    try:
         r = requests.post(
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
             data={
@@ -67,4 +51,3 @@ def send_alert(
     state[key] = True
     _save_state(state)
     return True
-
