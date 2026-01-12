@@ -7,6 +7,7 @@ from analysis.odds import fetch_winamax_pra
 from analysis.alerts import send_alert
 from analysis.explain import explain
 from analysis.roi import load_roi
+from analysis.combine import build_smart_combos
 
 # ================= CONFIG =================
 st.set_page_config(
@@ -38,7 +39,7 @@ def load_winamax():
 
 winamax = load_winamax()
 
-# ================= UI =================
+# ================= ANALYSE JOUEUR =================
 st.title("🏀 Dashboard Paris NBA — PRA")
 
 player = st.selectbox("👤 Joueur", sorted(agg["PLAYER_NAME"].unique()))
@@ -54,7 +55,7 @@ row = props[(props["PLAYER_NAME"] == player) & (props["STAT"] == "PRA")].iloc[0]
 model_line = round(row["MEAN"], 1)
 std = row["STD"] if row["STD"] > 0 else 1
 
-# --- Winamax SAFE ---
+# --- Winamax ---
 book_line = model_line
 odds = 1.90
 if not winamax.empty and "PLAYER_NAME" in winamax.columns:
@@ -64,7 +65,6 @@ if not winamax.empty and "PLAYER_NAME" in winamax.columns:
         book_line = wm["LINE"]
         odds = wm["ODDS"]
 
-# ================= MODEL =================
 prob = 1 - norm.cdf(book_line, model_line, std)
 value = abs(prob - 0.5)
 p90 = p_games["PRA"].quantile(0.9)
@@ -76,9 +76,8 @@ elif prob >= 0.58 and value >= 0.12:
 else:
     decision = "NO BET"
 
-# ================= DISPLAY =================
-st.divider()
-st.subheader("📌 Décision du modèle")
+# ================= AFFICHAGE =================
+st.subheader("📌 Décision")
 
 if decision == "OVER A":
     st.success("🟢 OVER PRA — CONFIANCE A")
@@ -92,19 +91,55 @@ elif decision == "OVER B":
 else:
     st.error("❌ NO BET")
 
-# --- KPIs ---
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("📊 PRA modèle", model_line)
 c2.metric("🎯 Ligne Book", f"{book_line} @ {odds}")
 c3.metric("📈 Proba Over", f"{round(prob*100,1)} %")
 c4.metric("🏠 / 🔁", f"{'Home' if home else 'Away'} | {'B2B' if b2b else 'Rest'}")
 
-# --- Explanation ---
 st.info(explain(decision, prob, value, p90, book_line))
 
-# --- ROI ---
+# ================= COMBINÉ INTELLIGENT =================
 st.divider()
-st.subheader("🏆 Classement joueurs rentables (ROI réel)")
+st.subheader("🧠 Combiné intelligent (OVER A uniquement)")
+
+# Construire la liste OVER A du jour
+over_list = []
+
+for _, r in props.iterrows():
+    pg = games[games["PLAYER_NAME"] == r["PLAYER_NAME"]]
+    if pg.empty:
+        continue
+
+    last = pg.sort_values("GAME_DATE").iloc[-1]
+    m = last["MATCHUP"]
+    team = m.split(" ")[0]
+
+    line = round(r["MEAN"], 1)
+    std = r["STD"] if r["STD"] > 0 else 1
+    prob_i = 1 - norm.cdf(line, r["MEAN"], std)
+    value_i = abs(prob_i - 0.5)
+    p90_i = pg["PRA"].quantile(0.9)
+
+    if prob_i >= 0.62 and value_i >= 0.15 and p90_i <= line + 6:
+        over_list.append({
+            "PLAYER_NAME": r["PLAYER_NAME"],
+            "MATCHUP": m,
+            "PROB": prob_i,
+            "ODDS": 1.90
+        })
+
+over_df = pd.DataFrame(over_list)
+
+if over_df.empty:
+    st.info("Aucun combiné intelligent disponible aujourd’hui")
+else:
+    combos = build_smart_combos(over_df)
+    st.dataframe(pd.DataFrame(combos), use_container_width=True)
+
+# ================= ROI =================
+st.divider()
+st.subheader("🏆 Classement ROI")
 
 roi = load_roi()
 if roi.empty:
