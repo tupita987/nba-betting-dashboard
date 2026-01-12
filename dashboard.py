@@ -13,10 +13,10 @@ DATA_PARIS = Path("data/paris.csv")
 DATA_PARIS.parent.mkdir(exist_ok=True)
 
 # ================= CHARGEMENT DATA =================
-games = pd.read_parquet("data/games.parquet")
-agg = pd.read_parquet("data/agg.parquet")
-props = pd.read_parquet("data/props.parquet")
-today = pd.read_parquet("data/today_games.parquet")
+games = pd.read_csv("data/players_7_games.csv")
+agg = pd.read_csv("data/players_aggregated.csv")
+props = pd.read_csv("data/props_model.csv")
+today = pd.read_csv("data/today_games.csv")
 
 # ================= HISTORIQUE PARIS =================
 if DATA_PARIS.exists():
