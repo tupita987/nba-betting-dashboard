@@ -19,7 +19,11 @@ props = pd.read_csv("data/props_model.csv")
 
 # ================= PRA =================
 if "PRA" not in games.columns:
-    games["PRA"] = games["PTS"].fillna(0) + games["REB"].fillna(0) + games["AST"].fillna(0)
+    games["PRA"] = (
+        games["PTS"].fillna(0)
+        + games["REB"].fillna(0)
+        + games["AST"].fillna(0)
+    )
 
 # ================= HISTORIQUE PARIS =================
 if DATA_PARIS.exists():
@@ -33,7 +37,11 @@ else:
 # ================= UI =================
 st.title("🏀 Dashboard Paris NBA — PRA")
 
-player = st.selectbox("👤 Joueur", sorted(agg["PLAYER_NAME"].unique()))
+player = st.selectbox(
+    "👤 Joueur",
+    sorted(agg["PLAYER_NAME"].unique())
+)
+
 p_games = games[games["PLAYER_NAME"] == player].copy()
 
 # ================= PRA MODÈLE (7 DERNIERS MATCHS) =================
@@ -45,51 +53,46 @@ pra_modele = (
 )
 pra_modele = round(pra_modele, 1)
 
-# ================= LIGNE BOOKMAKER (OPTION B) =================
+# ================= LIGNE WINAMAX =================
+ligne = None
+cote = None
+
 row_prop = props[props["PLAYER_NAME"] == player]
 
 if not row_prop.empty:
     ligne = float(row_prop.iloc[0]["MEAN"])
-    cote = float(row_prop.iloc[0].get("ODDS", 1.90))
-else:
-    ligne = round(pra_modele + 1.5, 1)
-    cote = 1.90
+    cote = float(row_prop.iloc[0].get("ODDS", None))
 
-# ================= PROBABILITÉ =================
+# ================= PROBABILITÉ (SI LIGNE EXISTE) =================
 std = p_games["PRA"].std()
 if pd.isna(std) or std < 1:
     std = 5
 
-prob_over = 1 - norm.cdf(ligne, pra_modele, std)
-prob_over = round(prob_over, 3)
+prob_over = None
+if ligne is not None:
+    prob_over = round(1 - norm.cdf(ligne, pra_modele, std), 3)
 
-# ================= VÉRIFICATION LIGNE BOOK =================
+# ================= DÉCISION =================
 ligne_disponible = (
-    ligne_book is not None
+    ligne is not None
     and cote is not None
-    and ligne_book > 0
+    and ligne > 0
     and cote > 1.01
 )
 
-if not ligne_disponible:
-    decision = "NO BET"
-    reason = "⏳ Ligne PRA Winamax non encore publiée"
+decision = "NO BET"
+raison = "⏳ Ligne PRA Winamax non encore publiée"
 
-# ================= DÉCISION (AVEC VALUE COTE) =================
 if ligne_disponible:
     proba_cote = 1 / cote
     marge_value = 0.05
 
     if prob_over >= 0.62 and prob_over > proba_cote + marge_value:
         decision = "OVER"
-        reason = "Value positive détectée"
-    elif prob_over <= 0.38 and (1 - prob_over) > proba_cote + marge_value:
-        decision = "UNDER"
-        reason = "Value positive détectée"
+        raison = "Value positive détectée"
     else:
         decision = "NO BET"
-        reason = "Pas assez de value"
-
+        raison = "Pas assez de value par rapport à la cote"
 
 # ================= AFFICHAGE =================
 st.divider()
@@ -97,16 +100,23 @@ st.subheader("📌 Décision du modèle")
 
 if decision == "OVER":
     st.success("✅ PARI AUTORISÉ — OVER PRA")
-elif decision == "UNDER":
-    st.warning("🟡 UNDER intéressant mais non prioritaire")
 else:
     st.error("❌ NO BET")
 
 c1, c2, c3, c4 = st.columns(4)
+
 c1.metric("📊 PRA modèle (7 matchs)", pra_modele)
-c2.metric("🎯 Ligne bookmaker", f"{ligne} @ {cote}")
-c3.metric("📈 Probabilité Over", f"{round(prob_over*100,1)} %")
-c4.metric("📉 Écart PRA - Ligne", round(pra_modele - ligne, 1))
+
+if ligne_disponible:
+    c2.metric("🎯 Ligne Winamax", f"{ligne} @ {cote}")
+    c3.metric("📈 Probabilité Over", f"{round(prob_over*100,1)} %")
+    c4.metric("📉 Value", f"{round((prob_over - (1/cote))*100,1)} %")
+else:
+    c2.metric("🎯 Ligne Winamax", "Non publiée")
+    c3.metric("📈 Probabilité Over", "—")
+    c4.metric("📉 Value", "—")
+
+st.info(raison)
 
 # ================= PARIER (UNIQUEMENT SI OVER) =================
 st.divider()
@@ -132,7 +142,7 @@ if decision == "OVER":
         paris.to_csv(DATA_PARIS, index=False)
         st.success("Pari enregistré ✔️")
 else:
-    st.info("Pari désactivé — aucune value détectée")
+    st.info("Pari désactivé — marché non disponible ou sans value")
 
 # ================= HISTORIQUE =================
 st.divider()
@@ -165,31 +175,8 @@ else:
     total_mise = editable["MISE"].sum()
     total_profit = editable["PROFIT"].sum()
     roi = (total_profit / total_mise * 100) if total_mise > 0 else 0
-    winrate = (editable["RESULTAT"] == "GAGNÉ").mean() * 100
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     c1.metric("📌 Paris", len(editable))
-    c2.metric("💸 Mise totale", f"{total_mise:.2f} €")
-    c3.metric("💰 Profit net", f"{total_profit:.2f} €")
-    c4.metric("📊 ROI", f"{roi:.1f} %")
-
-# ================= CLASSEMENT =================
-st.divider()
-st.subheader("🏆 Classement joueurs rentables")
-
-valid = paris[paris["RESULTAT"] != "EN ATTENTE"]
-
-if valid.empty:
-    st.info("Pas encore assez de paris validés")
-else:
-    classement = (
-        valid.groupby("JOUEUR")
-        .agg(MISE=("MISE", "sum"), PROFIT=("PROFIT", "sum"))
-        .reset_index()
-    )
-    classement["ROI (%)"] = classement["PROFIT"] / classement["MISE"] * 100
-
-    st.dataframe(
-        classement.sort_values("ROI (%)", ascending=False),
-        use_container_width=True
-    )
+    c2.metric("💰 Profit net", f"{total_profit:.2f} €")
+    c3.metric("📊 ROI", f"{roi:.1f} %")
