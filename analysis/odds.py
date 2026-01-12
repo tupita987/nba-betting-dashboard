@@ -3,7 +3,11 @@ import pandas as pd
 
 BASE = "https://api.the-odds-api.com/v4"
 
-def fetch_winamax_pra(api_key: str):
+def fetch_winamax_pra(api_key: str) -> pd.DataFrame:
+    """
+    Récupère les PRA joueurs NBA depuis Winamax (The Odds API).
+    Retourne un DataFrame VIDE si non dispo (SAFE).
+    """
     url = f"{BASE}/sports/basketball_nba/odds"
     params = {
         "apiKey": api_key,
@@ -21,34 +25,34 @@ def fetch_winamax_pra(api_key: str):
         return pd.DataFrame()
 
     rows = []
+
     for ev in data:
         for bk in ev.get("bookmakers", []):
             if "winamax" not in bk.get("key", ""):
                 continue
+
             for market in bk.get("markets", []):
-                if "player" not in market.get("key", ""):
-                    continue
                 for o in market.get("outcomes", []):
-                    name = o.get("name", "")
+                    name = o.get("name")
                     price = o.get("price")
-                    if price is None:
+
+                    if not name or price is None:
                         continue
 
+                    # Exemple attendu : "Jalen Johnson Over 31.5"
                     if " Over " not in name:
                         continue
 
-                    player, line = name.split(" Over ")
                     try:
+                        player, line = name.split(" Over ")
                         line = float(line)
-                    except:
+                    except Exception:
                         continue
 
                     rows.append({
                         "PLAYER_NAME": player.strip(),
-                        "STAT": "PRA",
                         "LINE": line,
-                        "ODDS": price,
-                        "BOOKMAKER": "Winamax"
+                        "ODDS": float(price)
                     })
 
     return pd.DataFrame(rows)
