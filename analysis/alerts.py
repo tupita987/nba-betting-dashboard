@@ -14,6 +14,40 @@ def _save_state(state):
     STATE_FILE.parent.mkdir(exist_ok=True)
     STATE_FILE.write_text(json.dumps(state))
 
+def send_market_open_alert(bot_token, chat_id):
+    state = _load_state()
+    today = str(date.today())
+    key = f"{today}_MARKET_OPEN"
+
+    if state.get(key):
+        return False
+
+    message = (
+        "📢 *MARCHÉ PRA OUVERT — WINAMAX*\n\n"
+        "Les lignes PRA NBA sont désormais disponibles.\n"
+        "Le modèle commence l’analyse des opportunités.\n\n"
+        "⏳ Aucune recommandation pour le moment."
+    )
+
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            data={
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            },
+            timeout=5
+        )
+        if r.status_code != 200:
+            return False
+    except Exception:
+        return False
+
+    state[key] = True
+    _save_state(state)
+    return True
+
 def send_alert(
     bot_token,
     chat_id,
