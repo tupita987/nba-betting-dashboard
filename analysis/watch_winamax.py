@@ -1,11 +1,9 @@
 import pandas as pd
 from pathlib import Path
 from scipy.stats import norm
-from alerts import send_alert
+from alerts import send_alert, send_market_open_alert
 import os
-from datetime import timedelta
 
-# ================= CONFIG =================
 DATA_STATE = Path("data/winamax_state.csv")
 DATA_STATE.parent.mkdir(exist_ok=True)
 
@@ -15,7 +13,6 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BANKROLL = 100
 MAX_COMBO_LEGS = 2
 
-# ================= FONCTIONS =================
 def apply_context_penalty(prob, home, b2b):
     penalty = 0.0
     if not home:
@@ -39,7 +36,6 @@ def is_b2b(player_games):
     d2 = pd.to_datetime(last_two.iloc[1]["GAME_DATE"])
     return (d2 - d1).days == 1
 
-# ================= CHARGEMENT DONNÉES =================
 games = pd.read_csv("data/players_7_games.csv")
 props = pd.read_csv("data/props_model.csv")
 
@@ -52,9 +48,13 @@ else:
     state = pd.DataFrame(columns=["PLAYER_NAME", "LINE"])
 
 winamax = props.copy()
+
+# === ALERTE MARCHÉ OUVERT ===
+if not winamax.empty:
+    send_market_open_alert(BOT_TOKEN, CHAT_ID)
+
 signals = []
 
-# ================= ANALYSE =================
 for _, row in winamax.iterrows():
     player = row["PLAYER_NAME"]
     ligne = row["MEAN"]
@@ -106,7 +106,6 @@ for _, row in winamax.iterrows():
 
 state.to_csv(DATA_STATE, index=False)
 
-# ================= COMBINÉ INTELLIGENT =================
 signals = sorted(signals, key=lambda x: x["prob"], reverse=True)
 
 if len(signals) >= 2:
