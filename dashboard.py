@@ -14,7 +14,7 @@ DATA_PARIS.parent.mkdir(exist_ok=True)
 
 # ================= CHARGEMENT DONNÉES =================
 games = pd.read_csv("data/players_7_games.csv")
-defense = pd.read_csv("data/defense_teams.csv")
+defense = pd.read_csv("data/team_defense.csv")
 
 # ================= PRA =================
 if "PRA" not in games.columns:
