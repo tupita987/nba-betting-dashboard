@@ -5,18 +5,18 @@ from pathlib import Path
 
 # ================= CONFIG =================
 st.set_page_config(
-    page_title="Dashboard Paris NBA — PRA (manuel + défense)",
+    page_title="Dashboard Paris NBA — PRA",
     layout="wide"
 )
 
-BANKROLL = 100  # bankroll de référence €
+BANKROLL = 100
 DATA_PARIS = Path("data/paris.csv")
 DATA_PARIS.parent.mkdir(exist_ok=True)
 
 # ================= CHARGEMENT DONNÉES =================
 games = pd.read_csv("data/players_7_games.csv")
 agg = pd.read_csv("data/players_aggregated.csv")
-defense = pd.read_csv("data/team_defense.csv")  # stats défense équipe
+defense = pd.read_csv("data/team_defense.csv")
 
 if "PRA" not in games.columns:
     games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
@@ -32,7 +32,7 @@ else:
 
 # ================= UI =================
 st.title("🏀 Dashboard Paris NBA — PRA")
-st.caption("Modèle forme récente + défense adverse simple")
+st.caption("Forme récente + ligne Winamax + défense adverse")
 
 player = st.selectbox(
     "👤 Joueur",
@@ -71,17 +71,15 @@ if pd.isna(std) or std < 1:
 row_def = defense[defense["TEAM"] == team_opp]
 
 def_bonus = 0.0
-def_label = "Moyenne"
+def_label = "AVERAGE_DEF"
 
 if not row_def.empty:
-    pra_allowed = row_def.iloc[0]["PRA_ALLOWED"]
+    def_label = row_def.iloc[0]["DEF_LABEL"]
 
-    if pra_allowed >= defense["PRA_ALLOWED"].quantile(0.67):
+    if def_label == "WEAK_DEF":
         def_bonus = 0.03
-        def_label = "Faible"
-    elif pra_allowed <= defense["PRA_ALLOWED"].quantile(0.33):
+    elif def_label == "STRONG_DEF":
         def_bonus = -0.03
-        def_label = "Forte"
 
 # ================= SAISIE WINAMAX =================
 st.subheader("🎯 Ligne Winamax (saisie manuelle)")
@@ -134,7 +132,7 @@ mise_conseillee = round(mise_kelly * coef, 2)
 
 # ================= AFFICHAGE =================
 st.divider()
-st.subheader("📌 Analyse complète")
+st.subheader("📌 Analyse")
 
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 
@@ -151,73 +149,3 @@ elif niveau == "ORANGE":
     st.warning(f"🟠 PARI JOUABLE — Mise réduite : {mise_conseillee} €")
 else:
     st.error("🔴 NO BET — Avantage insuffisant")
-
-# ================= ENREGISTRER PARI =================
-st.divider()
-st.subheader("💰 Enregistrer le pari")
-
-if niveau in ["VERT", "ORANGE"]:
-    with st.form("form_pari"):
-        mise_user = st.number_input(
-            "Mise jouée (€)",
-            min_value=1.0,
-            max_value=500.0,
-            value=float(max(mise_conseillee, 1.0))
-        )
-        submit = st.form_submit_button("📥 Enregistrer")
-
-    if submit:
-        new_row = {
-            "DATE": pd.Timestamp.today().date(),
-            "JOUEUR": player,
-            "TYPE": f"OVER PRA ({niveau})",
-            "LIGNE": ligne,
-            "COTE": cote,
-            "MISE": mise_user,
-            "RESULTAT": "EN ATTENTE",
-            "PROFIT": 0
-        }
-        paris = pd.concat([paris, pd.DataFrame([new_row])])
-        paris.to_csv(DATA_PARIS, index=False)
-        st.success("Pari enregistré ✔️")
-else:
-    st.info("Pari désactivé")
-
-# ================= HISTORIQUE =================
-st.divider()
-st.subheader("📒 Historique des paris")
-
-if paris.empty:
-    st.info("Aucun pari enregistré.")
-else:
-    editable = st.data_editor(
-        paris,
-        use_container_width=True,
-        column_config={
-            "RESULTAT": st.column_config.SelectboxColumn(
-                "Résultat",
-                options=["EN ATTENTE", "GAGNÉ", "PERDU"]
-            )
-        }
-    )
-
-    def calc_profit(row):
-        if row["RESULTAT"] == "GAGNÉ":
-            return round(row["MISE"] * (row["COTE"] - 1), 2)
-        if row["RESULTAT"] == "PERDU":
-            return -row["MISE"]
-        return 0
-
-    editable["PROFIT"] = editable.apply(calc_profit, axis=1)
-    editable.to_csv(DATA_PARIS, index=False)
-
-    total_mise = editable["MISE"].sum()
-    total_profit = editable["PROFIT"].sum()
-    roi = (total_profit / total_mise * 100) if total_mise > 0 else 0
-    winrate = (editable["RESULTAT"] == "GAGNÉ").mean() * 100
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("📌 Paris", len(editable))
-    c2.metric("💰 Profit net", f"{total_profit:.2f} €")
-    c3.metric("📊 ROI", f"{roi:.1f} %")
-    c4.metric("🎯 Winrate", f"{winrate:.1f} %")
