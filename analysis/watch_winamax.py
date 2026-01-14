@@ -28,17 +28,15 @@ def kelly_light(prob, odds, bankroll):
     kelly = edge / (odds - 1)
     return round(bankroll * kelly * 0.25, 2)
 
-def is_b2b(player_games):
-    if len(player_games) < 2:
+def is_b2b(p_games):
+    if len(p_games) < 2:
         return False
-    last_two = player_games.sort_values("GAME_DATE").tail(2)
+    last_two = p_games.sort_values("GAME_DATE").tail(2)
     d1 = pd.to_datetime(last_two.iloc[0]["GAME_DATE"])
     d2 = pd.to_datetime(last_two.iloc[1]["GAME_DATE"])
     return (d2 - d1).days == 1
 
 games = pd.read_csv("data/players_7_games.csv")
-props = pd.read_csv("data/props_model.csv")
-
 if "PRA" not in games.columns:
     games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
 
@@ -47,9 +45,14 @@ if DATA_STATE.exists():
 else:
     state = pd.DataFrame(columns=["PLAYER_NAME", "LINE"])
 
-winamax = props.copy()
+# === LECTURE WINAMAX RÉELLE ===
+wm_path = Path("data/winamax_pra.csv")
+if not wm_path.exists():
+    raise SystemExit
 
-# === ALERTE MARCHÉ OUVERT ===
+winamax = pd.read_csv(wm_path)
+
+# Alerte marché ouvert (1x/jour)
 if not winamax.empty:
     send_market_open_alert(BOT_TOKEN, CHAT_ID)
 
@@ -57,11 +60,8 @@ signals = []
 
 for _, row in winamax.iterrows():
     player = row["PLAYER_NAME"]
-    ligne = row["MEAN"]
-    cote = row.get("ODDS", None)
-
-    if cote is None or pd.isna(cote):
-        continue
+    ligne = row["LINE"]
+    cote = row["ODDS"]
 
     old = state[state["PLAYER_NAME"] == player]
     if not old.empty and old.iloc[0]["LINE"] == ligne:
@@ -73,12 +73,13 @@ for _, row in winamax.iterrows():
 
     last_game = p_games.sort_values("GAME_DATE").iloc[-1]
     matchup = last_game["MATCHUP"]
-
     home = "vs" in matchup
     b2b = is_b2b(p_games)
 
     pra = p_games.sort_values("GAME_DATE").tail(7)["PRA"].mean()
-    std = p_games["PRA"].std() or 5
+    std = p_games["PRA"].std()
+    if pd.isna(std) or std < 1:
+        std = 5
 
     prob_raw = 1 - norm.cdf(ligne, pra, std)
     prob = apply_context_penalty(prob_raw, home, b2b)
@@ -99,10 +100,7 @@ for _, row in winamax.iterrows():
             "stake": stake
         })
 
-    state = pd.concat([
-        state,
-        pd.DataFrame([{"PLAYER_NAME": player, "LINE": ligne}])
-    ])
+    state = pd.concat([state, pd.DataFrame([{"PLAYER_NAME": player, "LINE": ligne}])])
 
 state.to_csv(DATA_STATE, index=False)
 
@@ -112,13 +110,11 @@ if len(signals) >= 2:
     combo = signals[:MAX_COMBO_LEGS]
     combo_prob = 1
     combo_odds = 1
-
     for s in combo:
         combo_prob *= s["prob"]
         combo_odds *= s["cote"]
 
     combo_stake = kelly_light(combo_prob, combo_odds, BANKROLL)
-
     if combo_stake >= 1:
         send_alert(
             BOT_TOKEN,
