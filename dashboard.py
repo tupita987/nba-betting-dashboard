@@ -9,25 +9,28 @@ st.set_page_config(
     layout="wide"
 )
 
-BANKROLL = 100
 DATA_PARIS = Path("data/paris.csv")
 DATA_PARIS.parent.mkdir(exist_ok=True)
 
 # ================= CHARGEMENT DONNÉES =================
 games = pd.read_csv("data/players_7_games.csv")
-agg = pd.read_csv("data/players_aggregated.csv")
-defense = pd.read_csv("data/team_defense.csv")
+defense = pd.read_csv("data/defense_teams.csv")
 
+# ================= PRA =================
 if "PRA" not in games.columns:
-    games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
+    games["PRA"] = (
+        games["PTS"].fillna(0)
+        + games["REB"].fillna(0)
+        + games["AST"].fillna(0)
+    )
 
 # ================= HISTORIQUE PARIS =================
 if DATA_PARIS.exists():
     paris = pd.read_csv(DATA_PARIS)
 else:
     paris = pd.DataFrame(columns=[
-        "DATE", "JOUEUR", "TYPE", "LIGNE", "COTE",
-        "MISE", "RESULTAT", "PROFIT"
+        "DATE", "JOUEUR", "TYPE", "LIGNE",
+        "COTE", "MISE", "RESULTAT", "PROFIT"
     ])
 
 # ================= UI =================
@@ -36,116 +39,191 @@ st.caption("Forme récente + ligne Winamax + défense adverse")
 
 player = st.selectbox(
     "👤 Joueur",
-    sorted(agg["PLAYER_NAME"].unique())
+    sorted(games["PLAYER_NAME"].unique())
 )
 
 p_games = games[games["PLAYER_NAME"] == player].copy()
 
-# ================= MATCHUP =================
-last_game = p_games.sort_values("GAME_DATE").iloc[-1]
-matchup = last_game["MATCHUP"]
-
-if "vs" in matchup:
-    team_player, team_opp = matchup.split(" vs ")
-    home = True
-else:
-    team_player, team_opp = matchup.split(" @ ")
-    home = False
-
-team_opp = team_opp.strip()
-
 # ================= PRA MODÈLE =================
 pra_modele = (
-    p_games
-    .sort_values("GAME_DATE")
+    p_games.sort_values("GAME_DATE")
     .tail(7)["PRA"]
     .mean()
 )
 pra_modele = round(pra_modele, 1)
 
-std = p_games["PRA"].std()
-if pd.isna(std) or std < 1:
-    std = 5
+# ================= MATCHUP & ÉQUIPE ADVERSE =================
+matchup = p_games.sort_values("GAME_DATE").iloc[-1].get("MATCHUP", "")
+
+team_player = None
+team_opp = None
+home = False
+
+if isinstance(matchup, str):
+    if " vs " in matchup:
+        team_player, team_opp = matchup.split(" vs ")
+        home = True
+    elif " @ " in matchup:
+        team_player, team_opp = matchup.split(" @ ")
+        home = False
+
+if team_opp is None:
+    team_opp = "UNKNOWN"
 
 # ================= DÉFENSE ADVERSE =================
 row_def = defense[defense["TEAM"] == team_opp]
 
-def_bonus = 0.0
-def_label = "AVERAGE_DEF"
-
 if not row_def.empty:
     def_label = row_def.iloc[0]["DEF_LABEL"]
+else:
+    def_label = "AVERAGE_DEF"
 
-    if def_label == "WEAK_DEF":
-        def_bonus = 0.03
-    elif def_label == "STRONG_DEF":
-        def_bonus = -0.03
+# Modificateur défense
+def_mod = {
+    "STRONG_DEF": -0.04,
+    "AVERAGE_DEF": 0.0,
+    "WEAK_DEF": +0.05
+}.get(def_label, 0.0)
 
-# ================= SAISIE WINAMAX =================
-st.subheader("🎯 Ligne Winamax (saisie manuelle)")
+# ================= LIGNE WINAMAX (MANUELLE) =================
+st.divider()
+st.subheader("🎯 Ligne Winamax (entrée manuelle)")
 
 c1, c2 = st.columns(2)
+ligne = c1.number_input(
+    "Ligne PRA",
+    min_value=0.0,
+    step=0.5,
+    value=0.0
+)
+cote = c2.number_input(
+    "Cote",
+    min_value=1.01,
+    step=0.01,
+    value=1.90
+)
 
-with c1:
-    ligne = st.number_input(
-        "Ligne PRA Winamax",
-        min_value=0.0,
-        step=0.5,
-        value=round(pra_modele, 1)
-    )
+ligne_disponible = ligne > 0
 
-with c2:
-    cote = st.number_input(
-        "Cote Over Winamax",
-        min_value=1.01,
-        step=0.01,
-        value=1.90
-    )
+# ================= PROBABILITÉS =================
+std = p_games["PRA"].std()
+if pd.isna(std) or std < 1:
+    std = 5
 
-# ================= CALCUL =================
 prob_brute = 1 - norm.cdf(ligne, pra_modele, std)
-prob_adj = max(min(prob_brute + def_bonus, 0.99), 0.01)
+prob_adj = min(max(prob_brute + def_mod, 0), 1)
 
-proba_cote = 1 / cote
-value = prob_adj - proba_cote
+value = prob_adj - (1 / cote)
 
-edge = prob_adj * (cote - 1) - (1 - prob_adj)
-mise_kelly = 0
-if edge > 0:
-    mise_kelly = round(BANKROLL * (edge / (cote - 1)) * 0.25, 2)
+# ================= KELLY LIGHT 25% =================
+kelly = (
+    ((prob_adj * cote) - 1) / (cote - 1)
+    if value > 0 else 0
+)
+kelly = max(round(kelly * 0.25, 2), 0)
 
-# ================= FEU TRICOLORE =================
-decision = "🔴 NO BET"
-niveau = "ROUGE"
-coef = 0
-
-if prob_adj >= 0.62 and value >= 0.05 and mise_kelly > 0:
-    decision = "🟢 PARI FORT"
-    niveau = "VERT"
-    coef = 1.0
-elif prob_adj >= 0.58 and value >= 0.02 and mise_kelly > 0:
-    decision = "🟠 PARI JOUABLE"
-    niveau = "ORANGE"
-    coef = 0.5
-
-mise_conseillee = round(mise_kelly * coef, 2)
+# ================= DÉCISION =================
+if not ligne_disponible:
+    decision = "NO BET"
+    reason = "Ligne Winamax non renseignée"
+elif prob_adj >= 0.62 and value >= 0.04:
+    decision = "OVER"
+    reason = "Value forte détectée"
+elif prob_adj >= 0.55 and value >= 0.02:
+    decision = "WATCH"
+    reason = "Value moyenne"
+else:
+    decision = "NO BET"
+    reason = "Avantage insuffisant"
 
 # ================= AFFICHAGE =================
 st.divider()
-st.subheader("📌 Analyse")
+st.subheader("📌 Décision du modèle")
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-
-c1.metric("📊 PRA modèle", pra_modele)
-c2.metric("📈 Proba brute", f"{round(prob_brute*100,1)} %")
-c3.metric("🛡️ Défense adverse", def_label)
-c4.metric("📈 Proba ajustée", f"{round(prob_adj*100,1)} %")
-c5.metric("💎 Value", f"{round(value*100,1)} %")
-c6.metric("💰 Mise Kelly", mise_kelly)
-
-if niveau == "VERT":
-    st.success(f"🟢 PARI FORT — Mise conseillée : {mise_conseillee} €")
-elif niveau == "ORANGE":
-    st.warning(f"🟠 PARI JOUABLE — Mise réduite : {mise_conseillee} €")
+if decision == "OVER":
+    st.success("🟢 OVER PRA — PARI AUTORISÉ")
+elif decision == "WATCH":
+    st.warning("🟠 À SURVEILLER")
 else:
-    st.error("🔴 NO BET — Avantage insuffisant")
+    st.error("🔴 NO BET")
+
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("📊 PRA modèle", pra_modele)
+c2.metric("🎯 Ligne Winamax", f"{ligne} @ {cote}")
+c3.metric("📈 Proba brute", f"{round(prob_brute*100,1)} %")
+c4.metric("🛡️ Défense adverse", def_label)
+c5.metric("📈 Proba ajustée", f"{round(prob_adj*100,1)} %")
+
+st.info(
+    f"💎 Value : {round(value*100,1)} % | "
+    f"💰 Mise Kelly (25%) : {kelly}"
+)
+
+# ================= PARIER =================
+st.divider()
+st.subheader("💰 Parier")
+
+if decision == "OVER":
+    with st.form("form_pari"):
+        mise = st.number_input(
+            "Mise (€)",
+            min_value=1.0,
+            max_value=1000.0,
+            value=max(10.0, kelly * 100),
+            step=1.0
+        )
+        submit = st.form_submit_button("📥 Enregistrer le pari")
+
+    if submit:
+        new_row = {
+            "DATE": pd.Timestamp.today().date(),
+            "JOUEUR": player,
+            "TYPE": "OVER PRA",
+            "LIGNE": ligne,
+            "COTE": cote,
+            "MISE": mise,
+            "RESULTAT": "EN ATTENTE",
+            "PROFIT": 0
+        }
+        paris = pd.concat([paris, pd.DataFrame([new_row])])
+        paris.to_csv(DATA_PARIS, index=False)
+        st.success("Pari enregistré ✔️")
+else:
+    st.info(reason)
+
+# ================= HISTORIQUE =================
+st.divider()
+st.subheader("📒 Historique des paris")
+
+if paris.empty:
+    st.info("Aucun pari enregistré.")
+else:
+    editable = st.data_editor(
+        paris,
+        use_container_width=True,
+        column_config={
+            "RESULTAT": st.column_config.SelectboxColumn(
+                "Résultat",
+                options=["EN ATTENTE", "GAGNÉ", "PERDU"]
+            )
+        }
+    )
+
+    def calc_profit(row):
+        if row["RESULTAT"] == "GAGNÉ":
+            return round(row["MISE"] * (row["COTE"] - 1), 2)
+        if row["RESULTAT"] == "PERDU":
+            return -row["MISE"]
+        return 0
+
+    editable["PROFIT"] = editable.apply(calc_profit, axis=1)
+    editable.to_csv(DATA_PARIS, index=False)
+
+    total_mise = editable["MISE"].sum()
+    total_profit = editable["PROFIT"].sum()
+    roi = (total_profit / total_mise * 100) if total_mise > 0 else 0
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("📌 Paris", len(editable))
+    c2.metric("💰 Profit net", f"{total_profit:.2f} €")
+    c3.metric("📊 ROI", f"{roi:.1f} %")
