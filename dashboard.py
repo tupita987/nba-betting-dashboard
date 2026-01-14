@@ -5,12 +5,14 @@ from pathlib import Path
 
 # ================= CONFIG =================
 st.set_page_config(
-    page_title="Dashboard Paris NBA — PRA (manuel)",
+    page_title="Dashboard Paris NBA — PRA (manuel + feu)",
     layout="wide"
 )
 
 DATA_PARIS = Path("data/paris.csv")
 DATA_PARIS.parent.mkdir(exist_ok=True)
+
+BANKROLL = 100  # € de référence
 
 # ================= CHARGEMENT DONNÉES =================
 games = pd.read_csv("data/players_7_games.csv")
@@ -30,6 +32,7 @@ else:
 
 # ================= UI =================
 st.title("🏀 Dashboard Paris NBA — PRA (manuel)")
+st.caption("Feu tricolore • seuils agressifs • Kelly light")
 
 player = st.selectbox(
     "👤 Joueur",
@@ -81,47 +84,66 @@ value = prob_over - proba_cote
 
 # Kelly light 25 %
 edge = prob_over * (cote - 1) - (1 - prob_over)
-mise = 0
+mise_kelly = 0
 if edge > 0:
     kelly_full = edge / (cote - 1)
-    mise = round(100 * kelly_full * 0.25, 2)  # bankroll = 100 €
+    mise_kelly = round(BANKROLL * kelly_full * 0.25, 2)
 
-# ================= DÉCISION =================
-decision = "NO BET"
+# ================= FEU TRICOLORE =================
+decision = "🔴 NO BET"
+niveau = "ROUGE"
+coef_mise = 0
 
-if prob_over >= 0.62 and value >= 0.05 and mise > 0:
-    decision = "OVER"
+if prob_over >= 0.62 and value >= 0.05 and mise_kelly > 0:
+    decision = "🟢 PARI FORT"
+    niveau = "VERT"
+    coef_mise = 1.0
+
+elif prob_over >= 0.58 and value >= 0.02 and mise_kelly > 0:
+    decision = "🟠 PARI JOUABLE"
+    niveau = "ORANGE"
+    coef_mise = 0.5
+
+mise_conseillee = round(mise_kelly * coef_mise, 2)
 
 # ================= AFFICHAGE =================
 st.divider()
 st.subheader("📌 Décision du modèle")
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 
-c1.metric("📊 PRA modèle (7 matchs)", pra_modele)
+c1.metric("📊 PRA modèle", pra_modele)
 c2.metric("📈 Probabilité Over", f"{round(prob_over*100,1)} %")
-c3.metric("🎯 Proba implicite cote", f"{round(proba_cote*100,1)} %")
+c3.metric("🎯 Proba cote", f"{round(proba_cote*100,1)} %")
 c4.metric("💎 Value", f"{round(value*100,1)} %")
+c5.metric("💰 Mise Kelly", mise_kelly)
 
-if decision == "OVER":
-    st.success(f"✅ OVER PRA — Mise conseillée : {mise} €")
+if niveau == "VERT":
+    st.success(f"🟢 PARI FORT — Mise conseillée : {mise_conseillee} €")
+elif niveau == "ORANGE":
+    st.warning(f"🟠 PARI JOUABLE — Mise réduite : {mise_conseillee} €")
 else:
-    st.error("❌ NO BET — Value insuffisante")
+    st.error("🔴 NO BET — Avantage insuffisant")
 
 # ================= ENREGISTRER PARI =================
 st.divider()
 st.subheader("💰 Enregistrer le pari")
 
-if decision == "OVER":
+if niveau in ["VERT", "ORANGE"]:
     with st.form("form_pari"):
-        mise_user = st.number_input("Mise jouée (€)", 1.0, 500.0, float(mise))
+        mise_user = st.number_input(
+            "Mise jouée (€)",
+            min_value=1.0,
+            max_value=500.0,
+            value=float(max(mise_conseillee, 1.0))
+        )
         submit = st.form_submit_button("📥 Enregistrer")
 
     if submit:
         new_row = {
             "DATE": pd.Timestamp.today().date(),
             "JOUEUR": player,
-            "TYPE": "OVER PRA",
+            "TYPE": f"OVER PRA ({niveau})",
             "LIGNE": ligne,
             "COTE": cote,
             "MISE": mise_user,
@@ -165,8 +187,10 @@ else:
     total_mise = editable["MISE"].sum()
     total_profit = editable["PROFIT"].sum()
     roi = (total_profit / total_mise * 100) if total_mise > 0 else 0
+    winrate = (editable["RESULTAT"] == "GAGNÉ").mean() * 100
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("📌 Paris", len(editable))
     c2.metric("💰 Profit net", f"{total_profit:.2f} €")
     c3.metric("📊 ROI", f"{roi:.1f} %")
+    c4.metric("🎯 Winrate", f"{winrate:.1f} %")
