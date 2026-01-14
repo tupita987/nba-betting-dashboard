@@ -5,18 +5,18 @@ from pathlib import Path
 
 # ================= CONFIG =================
 st.set_page_config(
-    page_title="Dashboard Paris NBA — PRA (manuel + feu)",
+    page_title="Dashboard Paris NBA — PRA (manuel + défense)",
     layout="wide"
 )
 
+BANKROLL = 100  # bankroll de référence €
 DATA_PARIS = Path("data/paris.csv")
 DATA_PARIS.parent.mkdir(exist_ok=True)
-
-BANKROLL = 100  # € de référence
 
 # ================= CHARGEMENT DONNÉES =================
 games = pd.read_csv("data/players_7_games.csv")
 agg = pd.read_csv("data/players_aggregated.csv")
+defense = pd.read_csv("data/team_defense.csv")  # stats défense équipe
 
 if "PRA" not in games.columns:
     games["PRA"] = games["PTS"] + games["REB"] + games["AST"]
@@ -31,8 +31,8 @@ else:
     ])
 
 # ================= UI =================
-st.title("🏀 Dashboard Paris NBA — PRA (manuel)")
-st.caption("Feu tricolore • seuils agressifs • Kelly light")
+st.title("🏀 Dashboard Paris NBA — PRA")
+st.caption("Modèle forme récente + défense adverse simple")
 
 player = st.selectbox(
     "👤 Joueur",
@@ -40,6 +40,19 @@ player = st.selectbox(
 )
 
 p_games = games[games["PLAYER_NAME"] == player].copy()
+
+# ================= MATCHUP =================
+last_game = p_games.sort_values("GAME_DATE").iloc[-1]
+matchup = last_game["MATCHUP"]
+
+if "vs" in matchup:
+    team_player, team_opp = matchup.split(" vs ")
+    home = True
+else:
+    team_player, team_opp = matchup.split(" @ ")
+    home = False
+
+team_opp = team_opp.strip()
 
 # ================= PRA MODÈLE =================
 pra_modele = (
@@ -53,6 +66,22 @@ pra_modele = round(pra_modele, 1)
 std = p_games["PRA"].std()
 if pd.isna(std) or std < 1:
     std = 5
+
+# ================= DÉFENSE ADVERSE =================
+row_def = defense[defense["TEAM"] == team_opp]
+
+def_bonus = 0.0
+def_label = "Moyenne"
+
+if not row_def.empty:
+    pra_allowed = row_def.iloc[0]["PRA_ALLOWED"]
+
+    if pra_allowed >= defense["PRA_ALLOWED"].quantile(0.67):
+        def_bonus = 0.03
+        def_label = "Faible"
+    elif pra_allowed <= defense["PRA_ALLOWED"].quantile(0.33):
+        def_bonus = -0.03
+        def_label = "Forte"
 
 # ================= SAISIE WINAMAX =================
 st.subheader("🎯 Ligne Winamax (saisie manuelle)")
@@ -76,47 +105,45 @@ with c2:
     )
 
 # ================= CALCUL =================
-prob_over = 1 - norm.cdf(ligne, pra_modele, std)
-prob_over = round(prob_over, 3)
+prob_brute = 1 - norm.cdf(ligne, pra_modele, std)
+prob_adj = max(min(prob_brute + def_bonus, 0.99), 0.01)
 
 proba_cote = 1 / cote
-value = prob_over - proba_cote
+value = prob_adj - proba_cote
 
-# Kelly light 25 %
-edge = prob_over * (cote - 1) - (1 - prob_over)
+edge = prob_adj * (cote - 1) - (1 - prob_adj)
 mise_kelly = 0
 if edge > 0:
-    kelly_full = edge / (cote - 1)
-    mise_kelly = round(BANKROLL * kelly_full * 0.25, 2)
+    mise_kelly = round(BANKROLL * (edge / (cote - 1)) * 0.25, 2)
 
 # ================= FEU TRICOLORE =================
 decision = "🔴 NO BET"
 niveau = "ROUGE"
-coef_mise = 0
+coef = 0
 
-if prob_over >= 0.62 and value >= 0.05 and mise_kelly > 0:
+if prob_adj >= 0.62 and value >= 0.05 and mise_kelly > 0:
     decision = "🟢 PARI FORT"
     niveau = "VERT"
-    coef_mise = 1.0
-
-elif prob_over >= 0.58 and value >= 0.02 and mise_kelly > 0:
+    coef = 1.0
+elif prob_adj >= 0.58 and value >= 0.02 and mise_kelly > 0:
     decision = "🟠 PARI JOUABLE"
     niveau = "ORANGE"
-    coef_mise = 0.5
+    coef = 0.5
 
-mise_conseillee = round(mise_kelly * coef_mise, 2)
+mise_conseillee = round(mise_kelly * coef, 2)
 
 # ================= AFFICHAGE =================
 st.divider()
-st.subheader("📌 Décision du modèle")
+st.subheader("📌 Analyse complète")
 
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 
 c1.metric("📊 PRA modèle", pra_modele)
-c2.metric("📈 Probabilité Over", f"{round(prob_over*100,1)} %")
-c3.metric("🎯 Proba cote", f"{round(proba_cote*100,1)} %")
-c4.metric("💎 Value", f"{round(value*100,1)} %")
-c5.metric("💰 Mise Kelly", mise_kelly)
+c2.metric("📈 Proba brute", f"{round(prob_brute*100,1)} %")
+c3.metric("🛡️ Défense adverse", def_label)
+c4.metric("📈 Proba ajustée", f"{round(prob_adj*100,1)} %")
+c5.metric("💎 Value", f"{round(value*100,1)} %")
+c6.metric("💰 Mise Kelly", mise_kelly)
 
 if niveau == "VERT":
     st.success(f"🟢 PARI FORT — Mise conseillée : {mise_conseillee} €")
